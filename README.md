@@ -21,8 +21,10 @@ So far, there is no need to install this package. To run the simulation, bascial
 #Structure of the folder for results
 When the script, main.py, starts to run, it checks whether there is a folder called 'LBMResults' existing or not. If not, the new folder is created automatically. Then all the results from the simulation are saved in this folder. The structure of this folder is:
 
-'''bash
+'''
+
 ├── LBMResults
+
     ├──FluidsBDistributionAt0000%d.png
     ├──FluidsRdistributionAt0000%d.png
     ├──SimulationResultsRK.h5   
