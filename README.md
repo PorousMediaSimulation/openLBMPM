@@ -30,3 +30,8 @@ When the script, main.py, starts to run, it checks whether there is a folder cal
 
 .png files are shown the distribution of each fluid at a certain time step. .h5 file stores the densities and distribution functions of each fluid and the velocities in each direction. This file can be easily read using tables or h5py.
 
+#Types of boundary conditions
+1. Contant pressure
+2. Constant velocity
+3. Convective boundary
+4. Half-bounce back

@@ -79,6 +79,14 @@ class RKColorGradientLBM():
                 sys.exit()
             self.cosTheta = np.cos(self.contactAngle / 180. * np.pi)
             self.sinTheta = np.sin(self.contactAngle / 180. * np.pi)
+            try:
+                self.wettingType = int(config['SurfaceTension']['WettingType'])
+            except KeyError:
+                print("Cannot find the parameter for the value of wetting boundary type.")
+                sys.exit()
+            except ValueError:
+                print("The contact angle shoudl be an integer.")
+                sys.exit()
         try:
             self.betaThickness = float(config['RKParameters']['BetaThickness'])
         except KeyError:
@@ -149,6 +157,14 @@ class RKColorGradientLBM():
             sys.exit()
         except ValueError:
             print("The values for tau should be floats.")
+            sys.exit()
+        try:
+            self.tauCalculation = int(config['FluidParameters']['TauType'])
+        except KeyError:
+            print("Cannot find the parameter's name for calculating tau value.")
+            sys.exit()
+        except ValueError:
+            print("The value for the type of calculating tau should be an integer.")
             sys.exit()
         try:
             self.solidRhoR = float(config['BoundariesSetup']['SolidRhoR'])
@@ -1352,40 +1368,50 @@ class RKColorGradientLBM():
                                         deviceGradientX, deviceGradientY)
             if self.wettingSolidNodes.size > 0:
                 print("Update the color gradient values on the fluid nodes near to solid.")
-#                RKGPU2D.updateColorGradientOnWetting[grid1D, threadPerBlock1D](self.numWettingFluid, \
-#                                        self.xDimension, self.cosTheta, self.sinTheta, deviceFluidNodesWithSolid, \
-#                                        deviceUnitNsx, deviceUnitNsy, deviceGradientX, deviceGradientY)
-                RKGPU2D.updateColorGradientOnWettingNew[grid1D, threadPerBlock1D](self.numWettingFluid, \
-                                        self.xDimension, self.cosTheta, self.sinTheta, deviceFluidNodesWithSolid, \
-                                        deviceUnitNsx, deviceUnitNsy, deviceGradientX, deviceGradientY) 
+                if self.wettingType == 1:
+                    RKGPU2D.updateColorGradientOnWetting[grid1D, threadPerBlock1D](self.numWettingFluid, \
+                                                                                   self.xDimension, self.cosTheta, self.sinTheta,
+                                                                                   deviceFluidNodesWithSolid, \
+                                                                                   deviceUnitNsx, deviceUnitNsy, deviceGradientX,
+                                                                                   deviceGradientY)
+                elif self.wettingType == 2:
+                    RKGPU2D.updateColorGradientOnWettingNew[grid1D, threadPerBlock1D](self.numWettingFluid, \
+                                                                                      self.xDimension, self.cosTheta, self.sinTheta,
+                                                                                      deviceFluidNodesWithSolid, \
+                                                                                      deviceUnitNsx, deviceUnitNsy, deviceGradientX,
+                                                                                      deviceGradientY)
             print("Calculate the force values in the domain")
-#            RKGPU2D.calForceTermInColorGradient2D[grid1D, threadPerBlock1D](totalNodes, \
-#                                    self.xDimension, surfaceTension, deviceNeighboringNodes, \
-#                                    deviceWeightsCoeff, deviceUnitEX, deviceUnitEY, \
-#                                    deviceGradientX, deviceGradientY, deviceForceX, \
-#                                    deviceForceY, deviceKValue)
-            RKGPU2D.calForceTermInColorGradientNew2D[grid1D, threadPerBlock1D](totalNodes, \
-                                    self.xDimension, surfaceTension, deviceNeighboringNodes, \
-                                    deviceWeightsCoeff, deviceUnitEX, deviceUnitEY, \
-                                    deviceGradientX, deviceGradientY, deviceForceX, \
-                                    deviceForceY, deviceKValue)
+            if self.wettingType == 1:
+                RKGPU2D.calForceTermInColorGradient2D[grid1D, threadPerBlock1D](totalNodes, \
+                                                                                self.xDimension, surfaceTension,
+                                                                                deviceNeighboringNodes, \
+                                                                                deviceWeightsCoeff, deviceUnitEX, deviceUnitEY, \
+                                                                                deviceGradientX, deviceGradientY, deviceForceX, \
+                                                                                deviceForceY, deviceKValue)
+            elif self.wettingType == 2:
+                RKGPU2D.calForceTermInColorGradientNew2D[grid1D, threadPerBlock1D](totalNodes, \
+                                                                                   self.xDimension, surfaceTension,
+                                                                                   deviceNeighboringNodes, \
+                                                                                   deviceWeightsCoeff, deviceUnitEX, deviceUnitEY, \
+                                                                                   deviceGradientX, deviceGradientY, deviceForceX, \
+                                                                                   deviceForceY, deviceKValue)
             print("Calculate the single phase collision for total distribution function.")
             if self.relaxationType == "'SRT'":
                 RKGPU2D.calRKCollision1TotalGPU2DSRTM[grid1D, threadPerBlock1D](totalNodes, \
-                                                self.xDimension, self.tauR, self.tauB, \
+                                                self.xDimension, self.tauCalculation, self.tauR, self.tauB, \
                                                 deviceUnitEX, deviceUnitEY, \
                                                 deviceWeightsCoeff, devicePhysicalVX, \
                                                 devicePhysicalVY, deviceFluidRhoR, deviceFluidRhoB, \
                                                 deviceColorValue, deviceFluidPDFTotal)
                 print("Calculate the force perturbation for the total distribution function.")
                 RKGPU2D.calPerturbationFromForce2D[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \
-                                          self.tauR, self.tauB, deviceWeightsCoeff, deviceUnitEX, \
+                                          self.tauCalculation, self.tauR, self.tauB, deviceWeightsCoeff, deviceUnitEX, \
                                           deviceUnitEY, devicePhysicalVX, devicePhysicalVY, \
                                           deviceForceX, deviceForceY, deviceColorValue, \
-                                          deviceFluidPDFTotal)
+                                          deviceFluidPDFTotal, deviceFluidRhoR, deviceFluidRhoB)
             if self.relaxationType == "'MRT'":
                 RKGPU2D.calRKCollision1TotalGPU2DMRTM[grid1D, threadPerBlock1D](totalNodes, \
-                                            self.xDimension, self.tauR, self.tauB, \
+                                            self.xDimension, self.tauCalculation, self.tauR, self.tauB, \
                                             deviceUnitEX, deviceUnitEY, deviceWeightsCoeff, \
                                             devicePhysicalVX, devicePhysicalVY, \
                                             deviceFluidRhoR, deviceFluidRhoB, \
@@ -1393,11 +1419,12 @@ class RKColorGradientLBM():
                                             deviceTransformationM, deviceTransformationIM, \
                                             deviceCollisionM)
                 RKGPU2D.calPerturbationFromForce2DMRT[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \
-                                          self.tauR, self.tauB, deviceWeightsCoeff, deviceUnitEX, \
+                                          self.tauCalculation, self.tauR, self.tauB, deviceWeightsCoeff, deviceUnitEX, \
                                           deviceUnitEY, devicePhysicalVX, devicePhysicalVY, \
                                           deviceForceX, deviceForceY, deviceColorValue, \
                                           deviceFluidPDFTotal, deviceTransformationM, \
-                                          deviceTransformationIM, deviceCollisionM)
+                                          deviceTransformationIM, deviceCollisionM, \
+                                          deviceFluidRhoR, deviceFluidRhoB)
 
             print("Recoloring both fluids in the system.")
             RKGPU2D.calRecoloringProcessM[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \
