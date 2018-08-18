@@ -35,5 +35,5 @@ When the script, main.py, starts to run, it checks whether there is a folder cal
 #Types of boundary conditions
 1. Contant pressure
 2. Constant velocity
-3. Convective boundary
+3. Convective boundary (only for the outlet)
 4. Half-bounce back

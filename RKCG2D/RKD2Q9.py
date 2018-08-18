@@ -167,8 +167,7 @@ class RKColorGradientLBM():
             print("The value for the type of calculating tau should be an integer.")
             sys.exit()
         try:
-            self.solidRhoR = float(config['BoundariesSetup']['SolidRhoR'])
-            self.solidRhoB = float(config['BoundariesSetup']['SolidRhoB'])
+            self.solidPhi = float(config['SolidBoundarySetup']['SolidColorDiff'])
         except KeyError:
             print("Cannot find the parameter's name for densities values on solid.")
             sys.exit()
@@ -869,28 +868,6 @@ class RKColorGradientLBM():
             self.physicalVX[tmpY, tmpX] = self.optMacroVelocityX[tmpIndex]
             self.physicalVY[tmpY, tmpX] = self.optMacroVelocityY[tmpIndex]
             tmpIndex += 1
-#        print("Location 17, 30")
-#        print(self.fluidsRhoB[17, 30], self.fluidsRhoR[17, 30])
-#        print("Neighboring nodes are:")
-#        print(self.fluidsRhoB[17, 31], self.fluidsRhoR[17, 31])
-#        print(self.fluidsRhoB[17, 29], self.fluidsRhoR[17, 29])
-#        print(self.fluidsRhoB[18, 30], self.fluidsRhoR[18, 30])
-#        print(self.fluidsRhoB[16, 30], self.fluidsRhoR[16, 30])
-#        print(self.fluidsRhoB[18, 31], self.fluidsRhoR[18, 31])
-#        print(self.fluidsRhoB[18, 29], self.fluidsRhoR[18, 29])
-#        print(self.fluidsRhoB[16, 29], self.fluidsRhoR[16, 29])
-#        print(self.fluidsRhoB[16, 31], self.fluidsRhoR[16, 31])
-#        print("Location 47, 30")
-#        print(self.fluidsRhoB[47, 30], self.fluidsRhoR[47, 30])
-#        print("Neighboring nodes are:")
-#        print(self.fluidsRhoB[47, 31], self.fluidsRhoR[47, 31])
-#        print(self.fluidsRhoB[47, 29], self.fluidsRhoR[47, 29])
-#        print(self.fluidsRhoB[48, 30], self.fluidsRhoR[48, 30])
-#        print(self.fluidsRhoB[46, 30], self.fluidsRhoR[46, 30])
-#        print(self.fluidsRhoB[48, 31], self.fluidsRhoR[48, 31])
-#        print(self.fluidsRhoB[48, 29], self.fluidsRhoR[48, 29])
-#        print(self.fluidsRhoB[46, 29], self.fluidsRhoR[46, 29])
-#        print(self.fluidsRhoB[46, 31], self.fluidsRhoR[46, 31])
         
     def resultInHDF5(self, iStep):
         """
@@ -987,15 +964,7 @@ class RKColorGradientLBM():
         blockNumY = math.ceil(self.fluidNodes.size / self.xDimension)
         threadPerBlock1D = (self.threadNum, 1)
         grid1D = (blockNumX, blockNumY)
-#        print(self.weightsCoeff)
-#        print(self.constantCR)
-#        print(self.constantCB)
-#        print(self.constantB)
-#        print(self.unitEX)
-#        print(self.unitEY)
-#        print(self.gradientScheme)
-#        print(self.AkB, self.AkR)
-#        input()
+
         iStep = 0; recordStep = 0
         while (iStep < self.timeSteps):
             print("At the time step %d." % iStep)
@@ -1076,27 +1045,16 @@ class RKColorGradientLBM():
 #                            deviceFluidPDFR, deviceFluidPDFB, deviceFluidPDFTotal)
             if ((iStep - 1) % self.timeInterval == 0):
                 print("Copy data to host for saving and plotting.")
-#                tmpRhoR = deviceFluidRhoR.copy_to_host()
-#                print(tmpRhoR.shape)
-#                print(self.optFluidRhoR.shape)
-#                input()
-#                self.optFluidRhoR = deviceFluidRhoR.copy_to_host()
-#                self.optFluidRhoB = deviceFluidRhoB.copy_to_host()
-                self.optFluidRhoR = deviceGradientX.copy_to_host()
-                self.optFluidRhoB = deviceGradientY.copy_to_host()
+                self.optFluidRhoR = deviceFluidRhoR.copy_to_host()
+                self.optFluidRhoB = deviceFluidRhoB.copy_to_host()
                 self.optMacroVelocityX = devicePhysicalVX.copy_to_host()
                 self.optMacroVelocityY = devicePhysicalVY.copy_to_host()
-#                self.optFluidPDFB = deviceFluidPDFB.copy_to_host()
-#                self.optFluidPDFR = deviceFluidPDFR.copy_to_host()
-#                print("convert the array.")
+                self.optFluidPDFB = deviceFluidPDFB.copy_to_host()
+                self.optFluidPDFR = deviceFluidPDFR.copy_to_host()
                 self.convertOptTo2D()
                 self.resultInHDF5(recordStep)
                 self.plotDensityDistributionOPT(recordStep)
                 recordStep += 1
-#                print(self.fluidsRhoB[1, :])
-#                print(self.fluidPDFB[1, 24, :])
-#                print(self.fluidsRhoB[2, :])
-                input()
             RKGPU2D.calPhaseFieldPhi[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \
                             deviceFluidRhoR, deviceFluidRhoB, devicePhiValue)
             if (self.boundaryTypeOutlet == "'Dirilcht'"):
@@ -1110,21 +1068,21 @@ class RKColorGradientLBM():
 #                                            deviceConstCR, deviceConstCB, deviceWeightsCoeff, \
 #                                            devicePhysicalVX, devicePhysicalVY, deviceFluidRhoR, \
 #                                            deviceFluidRhoB, deviceFluidPDFR, deviceFluidPDFB)
-#                RKGPU2D.calRKCollision1GPU2DSRTNew[grid1D, threadPerBlock1D](totalNodes, \
-#                                            self.xDimension, self.deltaValue, self.tauR, \
-#                                            self.tauB, deviceUnitEX, deviceUnitEY, \
-#                                            deviceConstCR, deviceConstCB, deviceWeightsCoeff, \
-#                                            devicePhysicalVX, devicePhysicalVY, deviceFluidRhoR, \
-#                                            deviceFluidRhoB, devicePhiValue, \
-#                                            deviceFluidPDFR, deviceFluidPDFB, deviceCollisionR1, \
-#                                            deviceCollisionB1)
-                RKGPU2D.calRKCollision1TotalGPU2DSRT[grid1D, threadPerBlock1D](totalNodes, \
-                                            self.xDimension, self.tauR, self.tauB, \
-                                            deviceUnitEX, deviceUnitEY, deviceConstCR, \
-                                            deviceConstCB, deviceWeightsCoeff, devicePhysicalVX, \
-                                            devicePhysicalVY, deviceFluidRhoR, deviceFluidRhoB, \
-                                            devicePhiValue, deviceFluidPDFTotal, \
-                                            deviceCollisionTotal1)
+                RKGPU2D.calRKCollision1GPU2DSRTNew[grid1D, threadPerBlock1D](totalNodes, \
+                                           self.xDimension, self.deltaValue, self.tauR, \
+                                           self.tauB, deviceUnitEX, deviceUnitEY, \
+                                           deviceConstCR, deviceConstCB, deviceWeightsCoeff, \
+                                           devicePhysicalVX, devicePhysicalVY, deviceFluidRhoR, \
+                                           deviceFluidRhoB, devicePhiValue, \
+                                           deviceFluidPDFR, deviceFluidPDFB, deviceCollisionR1, \
+                                           deviceCollisionB1)
+#                 RKGPU2D.calRKCollision1TotalGPU2DSRT[grid1D, threadPerBlock1D](totalNodes, \
+#                                             self.xDimension, self.tauR, self.tauB, \
+#                                             deviceUnitEX, deviceUnitEY, deviceConstCR, \
+#                                             deviceConstCB, deviceWeightsCoeff, devicePhysicalVX, \
+#                                             devicePhysicalVY, deviceFluidRhoR, deviceFluidRhoB, \
+#                                             devicePhiValue, deviceFluidPDFTotal, \
+#                                             deviceCollisionTotal1)
             elif self.relaxationType == "'MRT'":
 #                RKGPU2D.calRKCollision1GPU2DMRT[grid1D, threadPerBlock1D](totalNodes, \
 #                                            self.xDimension, self.deltaValue, self.tauR, \
@@ -1152,22 +1110,22 @@ class RKColorGradientLBM():
 #                                        deviceFluidRhoB, deviceConstCR, deviceConstCR, \
 #                                        deviceFluidPDFR, deviceFluidPDFB, deviceCGX, \
 #                                        deviceCGY)
-#            RKGPU2D.calRKCollision23GPUNew[grid1D, threadPerBlock1D](totalNodes, \
-#                                        self.xDimension, self.betaThickness, self.AkR, \
-#                                        self.AkB, self.solidPhi, \
-#                                        deviceFluidNodes, deviceNeighboringNodes, \
-#                                        deviceConstBNew, deviceWeightsCoeff, deviceUnitEX, \
-#                                        deviceUnitEY, deviceScheme, deviceFluidRhoR, \
-#                                        deviceFluidRhoB, devicePhiValue, deviceConstCR, \
-#                                        deviceConstCB, deviceFluidPDFR, deviceFluidPDFB, \
-#                                        deviceCGX, deviceCGY)
-            surfaceTA = self.AkR * 2.
-            RKGPU2D.calRKCollision2TotalGPUNew[grid1D, threadPerBlock1D](totalNodes, \
-                                    self.xDimension, surfaceTA, self.solidPhi, \
-                                    deviceFluidNodes, deviceNeighboringNodes, \
-                                    deviceConstBNew, deviceWeightsCoeff, deviceUnitEX, \
-                                    deviceUnitEY, devicePhiValue, deviceCollisionTotal2, \
-                                    deviceGradientX, deviceGradientY)
+               RKGPU2D.calRKCollision23GPUNew[grid1D, threadPerBlock1D](totalNodes, \
+                                           self.xDimension, self.betaThickness, self.AkR, \
+                                           self.AkB, self.solidPhi, \
+                                           deviceFluidNodes, deviceNeighboringNodes, \
+                                           deviceConstBNew, deviceWeightsCoeff, deviceUnitEX, \
+                                           deviceUnitEY, deviceScheme, deviceFluidRhoR, \
+                                           deviceFluidRhoB, devicePhiValue, deviceConstCR, \
+                                           deviceConstCB, deviceFluidPDFR, deviceFluidPDFB, \
+                                           deviceCGX, deviceCGY)
+            # surfaceTA = self.AkR * 2.
+            # RKGPU2D.calRKCollision2TotalGPUNew[grid1D, threadPerBlock1D](totalNodes, \
+            #                         self.xDimension, surfaceTA, self.solidPhi, \
+            #                         deviceFluidNodes, deviceNeighboringNodes, \
+            #                         deviceConstBNew, deviceWeightsCoeff, deviceUnitEX, \
+            #                         deviceUnitEY, devicePhiValue, deviceCollisionTotal2, \
+            #                         deviceGradientX, deviceGradientY)
             RKGPU2D.calRecoloringProcess[grid1D, threadPerBlock1D](totalNodes, \
                                     self.xDimension, self.betaThickness, deviceWeightsCoeff, \
                                     deviceFluidRhoR, deviceFluidRhoB, deviceUnitEX, \
