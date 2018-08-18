@@ -18,6 +18,7 @@ import tables as tb
 from numba import autojit, jit, cuda
 
 import AcceleratedRKGPU2D as RKGPU2D
+import RKGPU2DBoundary as RKCG2DBC
 from SimpleGeometryRK import defineGeometry
 
 class RKColorGradientLBM():
@@ -904,13 +905,13 @@ class RKColorGradientLBM():
 #        plt.subplot(121)
         plt.imshow(self.fluidsRhoR, origin = 'low')
         plt.colorbar()
-        plt.savefig(pathResults + 'FluidRsDistributionAt%05d.png' % (iStep))
+        plt.savefig(pathResults + 'FluidsRDistributionAt%05d.png' % (iStep))
         plt.close()
 #        plt.colorbar()
 #        plt.subplot(122)
         plt.imshow(self.fluidsRhoB, origin = 'low')
         plt.colorbar()
-        plt.savefig(pathResults + 'FluidBsDistributionAt%05d.png' % (iStep))
+        plt.savefig(pathResults + 'FluidsBDistributionAt%05d.png' % (iStep))
         plt.close()
         
 
@@ -1245,53 +1246,53 @@ class RKColorGradientLBM():
 #                            deviceFluidPDFR, deviceFluidPDFB, deviceFluidPDFTotal)
             if self.boundaryTypeOutlet == "'Convective'":
                 print("Free boundary at the outlet.")
-                RKGPU2D.convectiveOutletGPU[grid1D, threadPerBlock1D](totalNodes, self.xDomain, \
+                RKCG2DBC.convectiveOutletGPU[grid1D, threadPerBlock1D](totalNodes, self.xDomain, \
                                    self.xDimension, deviceFluidNodes, deviceNeighboringNodes, deviceFluidPDFR, \
                                    deviceFluidPDFB, deviceFluidRhoR, deviceFluidRhoB)
-                RKGPU2D.convectiveOutletGhost2GPU[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.convectiveOutletGhost2GPU[grid1D, threadPerBlock1D](totalNodes, \
                                 self.xDomain, self.xDimension, deviceFluidNodes, deviceNeighboringNodes, \
                                 deviceFluidPDFR, deviceFluidPDFB, deviceFluidRhoR, \
                                 deviceFluidRhoB)
-                RKGPU2D.convectiveOutletGhost3GPU[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.convectiveOutletGhost3GPU[grid1D, threadPerBlock1D](totalNodes, \
                                 self.xDomain, self.xDimension, deviceFluidNodes, deviceNeighboringNodes, \
                                 deviceFluidPDFR, deviceFluidPDFB, deviceFluidRhoR, \
                                 deviceFluidRhoB)
             elif self.boundaryTypeOutlet == "'Dirichlet'":
                 print("Use constant pressure/density boundary.")
-                RKGPU2D.calConstPressureLowerGPU[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.calConstPressureLowerGPU[grid1D, threadPerBlock1D](totalNodes, \
                                 self.xDomain, self.xDimension, self.densityRhoBL, \
                                 self.densityRhoRL, deviceFluidNodes, deviceFluidRhoB, \
                                 deviceFluidRhoR, deviceFluidPDFB, \
                                 deviceFluidPDFR)
-                RKGPU2D.ghostPointsConstPressureLowerRK[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.ghostPointsConstPressureLowerRK[grid1D, threadPerBlock1D](totalNodes, \
                                 self.xDomain, self.xDimension, deviceFluidNodes, \
                                 deviceNeighboringNodes, deviceFluidRhoR, deviceFluidRhoB, \
                                 deviceFluidPDFR, deviceFluidPDFB)
                 
             if self.boundaryTypeInlet == "'Neumann'":
-#                RKGPU2D.constantVelocityZHBoundaryHigherRK[grid1D, threadPerBlock1D](totalNodes, \
+#                RKGPU2DBC.constantVelocityZHBoundaryHigherRK[grid1D, threadPerBlock1D](totalNodes, \
 #                                        self.xDomain, self.yDomain, self.xDimension, \
 #                                        self.velocityYR, self.velocityYB, deviceFluidNodes, \
 #                                        deviceFluidRhoR, deviceFluidRhoB, deviceFluidPDFR, \
 #                                        deviceFluidPDFB)
-                RKGPU2D.constantVelocityZHBoundaryHigherNewRK[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.constantVelocityZHBoundaryHigherNewRK[grid1D, threadPerBlock1D](totalNodes, \
                                         self.xDomain, self.yDomain, self.xDimension, \
                                         self.velocityYR, self.velocityYB, deviceFluidNodes, \
                                         deviceNeighboringNodes, deviceFluidRhoR, \
                                         deviceFluidRhoB, deviceFluidPDFR, \
                                         deviceFluidPDFB)
-                RKGPU2D.ghostPointsConstantVelocityRK[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.ghostPointsConstantVelocityRK[grid1D, threadPerBlock1D](totalNodes, \
                                         self.xDomain, self.yDomain, self.xDimension, deviceFluidNodes, \
                                         deviceNeighboringNodes, deviceFluidRhoR, \
                                         deviceFluidRhoB, deviceFluidPDFR, deviceFluidPDFB)
             if self.boundaryTypeInlet == "'Dirichlet'":
                 print("Use constant pressure/density boundary.")
-                RKGPU2D.calConstPressureInletGPU[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.calConstPressureInletGPU[grid1D, threadPerBlock1D](totalNodes, \
                                 self.xDomain, self.yDomain, self.xDimension, self.densityRhoBH, \
                                 self.densityRhoRH, deviceFluidNodes, deviceFluidRhoB, \
                                 deviceFluidRhoR, deviceFluidPDFB, \
                                 deviceFluidPDFR)
-                RKGPU2D.ghostPointsConstPressureInletRK[grid1D, threadPerBlock1D](totalNodes, \
+                RKCG2DBC.ghostPointsConstPressureInletRK[grid1D, threadPerBlock1D](totalNodes, \
                                 self.xDomain, self.yDomain, self.xDimension, deviceFluidNodes, \
                                 deviceNeighboringNodes, deviceFluidRhoR, deviceFluidRhoB, \
                                 deviceFluidPDFR, deviceFluidPDFB)

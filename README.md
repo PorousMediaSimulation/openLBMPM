@@ -1,5 +1,5 @@
-# openLBMPM
-openLBMPM is an open source lattice Boltzmann method (LBM) package for multicomponent and multiphase (MCMP) flow and transport in porous media. Currently, it includes Shan-Chen method and color gradient method for MCMP system. Currently, the transport part does not include any chemical reactions and phase change, but they will be added later. 
+# OpenLBMPM
+OpenLBMPM is an open source lattice Boltzmann method (LBM) package for multicomponent and multiphase (MCMP) flow and transport in porous media. Currently, it includes Shan-Chen method and color gradient method for MCMP system. Currently, the transport part does not include any chemical reactions and phase change, but they will be added later. 
 
 D2Q9 and D3Q19 schemes are implemented to simulate fluid flow in 2D and 3D. To balance the accuracy and efficiency, D2Q5 and D3Q7 schemes are used to simulate the transport phenomena. 
 
@@ -9,3 +9,24 @@ OpenLBMPM is accelerated by GPU parallel computation, so it needs several suppor
 
 1. [CUDA](https://developer.nvidia.com/cuda-downloads)
 2. [Anaconda](https://www.anaconda.com/download/#linux)
+
+#How to use the codes
+So far, there is no need to install this package. To run the simulation, bascially, inputting 'python main.py' under the directory of OpenLBMPM is enough. Then you can choose which kind of MCMP LBM is needed. The details on how to set up and run a simulation are shown below:
+1. Use git clone to get the copy of this packaged
+2. Set up the environmental variables in .bashrc (e.g., export PYTHONPATH=$PYTHONPATH:/PATH/PACKAGE/RKCG2D) for all LBM methods
+3. Set up the geometry of the simulated domain in the file SimpleGeometry.py, which is usually not complicated or add the pore structure image to the designated folder (/home/$USER/StructureImage/)
+4. Set up fluid properties, boundary conditions, and simulation time in the .ini file from the folder IniFiles.
+5. Input python main.py to run the simulation
+
+#Structure of the folder for results
+When the script, main.py, starts to run, it checks whether there is a folder called 'LBMResults' existing or not. If not, the new folder is created automatically. Then all the results from the simulation are saved in this folder. The structure of this folder is:
+
+'''bash
+├── LBMResults
+    ├──FluidsBDistributionAt0000%d.png
+    ├──FluidsRdistributionAt0000%d.png
+    ├──SimulationResultsRK.h5   
+'''
+
+.png files are shown the distribution of each fluid at a certain time step. .h5 file stores the densities and distribution functions of each fluid and the velocities in each direction. This file can be easily read using tables or h5py.
+
