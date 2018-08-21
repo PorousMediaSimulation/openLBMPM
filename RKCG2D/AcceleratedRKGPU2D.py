@@ -1147,12 +1147,13 @@ Calculate the distribution function after adding the force term (SRT)
 """
 
 
-@cuda.jit('void(int64, int64, int64, float64, float64, float64[:], float64[:], float64[:], \
+@cuda.jit('void(int64, int64, int64, float64, float64, float64, float64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], float64[:], \
                 float64[:, :], float64[:], float64[:])')
-def calPerturbationFromForce2D(totalNodes, xDim, optionF, tauR, tauB, weightsCoeff, unitEX, \
-                               unitEY, physicalVX, physicalVY, forceX, forceY, \
-                               colorValue, fluidTotalPDF, fluidRhoR, fluidRhoB):
+def calPerturbationFromForce2D(totalNodes, xDim, optionF, tauR, tauB, deltaValue, \
+                               weightsCoeff, unitEX, unitEY, physicalVX, physicalVY, \
+                               forceX, forceY, colorValue, fluidTotalPDF, \
+                               fluidRhoR, fluidRhoB):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
@@ -1164,16 +1165,21 @@ def calPerturbationFromForce2D(totalNodes, xDim, optionF, tauR, tauB, weightsCoe
         sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
         sharedWeights[i] = weightsCoeff[i]
     if indices < totalNodes:
-        Phi = colorValue[indices]
-        if optionF == 1:
-            tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
-                                 (tauB - 0.5)))
-        elif optionF == 2:
-            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
-            tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
-            tmpTau = 3. * tmpMiu + 0.5
+        Phi = colorValue[indices]; tmpTau = 1.0
+        if Phi > deltaValue:
+            tmpTau = tauR
+        elif Phi < -deltaValue:
+            tmpTau = tauB
+        elif math.fabs(Phi) <= deltaValue:
+            if optionF == 1:
+                tmpTau = 0.5 + 3. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
+                                     (tauB - 0.5)))
+            elif optionF == 2:
+                ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
+                tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
+                tmpTau = 3. * tmpMiu + 0.5
         tmpFX = forceX[indices]; tmpFY = forceY[indices]
         for i in range(9):
 #            term1 = sharedEX[i] * forceX[indices] * 3.
@@ -1203,11 +1209,11 @@ Collision process 1 with total distribution function in modified method
 """
 
 
-@cuda.jit('void(int64, int64, int64, float64, float64, float64[:], float64[:], \
+@cuda.jit('void(int64, int64, int64, float64, float64, float64, float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:, :])')
-def calRKCollision1TotalGPU2DSRTM(totalNodes, xDim, optionF, tauR, tauB, unitEX, unitEY, \
-                         weightsCoeff, physicalVX, physicalVY, \
+def calRKCollision1TotalGPU2DSRTM(totalNodes, xDim, optionF, tauR, tauB, deltaValue, \
+                         unitEX, unitEY, weightsCoeff, physicalVX, physicalVY, \
                          fluidRhoR, fluidRhoB, ColorValue, fluidPDFTotal):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
@@ -1222,15 +1228,20 @@ def calRKCollision1TotalGPU2DSRTM(totalNodes, xDim, optionF, tauR, tauB, unitEX,
 
     if (indices < totalNodes):
         Phi = ColorValue[indices]; tmpTau = 1.
-        if optionF == 1:
-            tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
-                                 (tauB - 0.5)))
-        elif optionF == 2:
-            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
-            tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
-            tmpTau = 3. * tmpMiu + 0.5
+        if Phi > deltaValue:
+            tmpTau = tauR
+        elif Phi < -deltaValue:
+            tmpTau = tauB
+        elif math.fabs(Phi) <= deltaValue:
+            if optionF == 1:
+                tmpTau = 0.5 + 3. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
+                                     (tauB - 0.5)))
+            elif optionF == 2:
+                ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
+                tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
+                tmpTau = 3. * tmpMiu + 0.5
         tmpRhoR = fluidRhoR[indices]; tmpRhoB = fluidRhoB[indices]
         tmpVX = physicalVX[indices]; tmpVY = physicalVY[indices]
         for i in range(9):
@@ -1319,12 +1330,12 @@ Collision process 1 with total distribution function in modified method
 """
 
 
-@cuda.jit('void(int64, int64, int64, float64, float64, float64[:], float64[:], \
+@cuda.jit('void(int64, int64, int64, float64, float64, float64, float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:, :], float64[:, :], float64[:, :], \
                 float64[:])')
-def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, unitEX, unitEY, \
-                         weightsCoeff, physicalVX, physicalVY, \
+def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, deltaValue, \
+                         unitEX, unitEY, weightsCoeff, physicalVX, physicalVY, \
                          fluidRhoR, fluidRhoB, ColorValue, fluidPDFTotal, transformationM, \
                          inverseTM, collisionS):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
@@ -1338,7 +1349,7 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, unitEX,
     sharedTM = cuda.shared.array(shape = (9, 9), dtype = float64)
     sharedIM = cuda.shared.array(shape = (9, 9), dtype = float64)
 
-    localCollisionS = cuda.local.array(shape = (9,), dtype = float64)
+    localCollisionS = cuda.shared.array(shape = (9,), dtype = float64)
     localSingleCollision = cuda.local.array(shape = (9,), dtype = float64)
     localTransformation = cuda.local.array(shape = (9,), dtype = float64)
 
@@ -1348,22 +1359,27 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, unitEX,
         for j in range(9):
             sharedTM[i, j] = transformationM[i, j]
             sharedIM[i, j] = inverseTM[i, j]
+    for i in range(9):
+        localCollisionS[i] = collisionS[i]
 
     if (indices < totalNodes):
         Phi = ColorValue[indices]; tmpTau = 1.
-        if optionF == 1:
-            tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
-                                 (tauB - 0.5)))
-        elif optionF == 2:
-            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
-            tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
-            tmpTau = 3. * tmpMiu + 0.5
-        for i in range(9):
-            localCollisionS[i] = collisionS[i]
+        if Phi > deltaValue:
+            tmpTau = tauR
+        elif Phi < -deltaValue:
+            tmpTau = tauB
+        elif math.fabs(Phi) <= deltaValue:
+            if optionF == 1:
+                tmpTau = 0.5 + 3. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
+                                     (tauB - 0.5)))
+            elif optionF == 2:
+                ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
+                tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
+                tmpTau = 3. * tmpMiu + 0.5
         localCollisionS[7] = 1./tmpTau; localCollisionS[8] = 1./tmpTau
-        
+
         tmpRhoR = fluidRhoR[indices]; tmpRhoB = fluidRhoB[indices]
         tmpVX = physicalVX[indices]; tmpVY = physicalVY[indices]
         for i in range(9):
@@ -1371,6 +1387,10 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, unitEX,
                             sharedEX[i], sharedEY[i], tmpVX, tmpVY)
             tmpEquilibriumB = calEquilibriumRK2D(tmpRhoB, sharedWeights[i], \
                             sharedEX[i], sharedEY[i], tmpVX, tmpVY)
+#            tmpEquilibriumR = calEquilibriumRK2DOriginal(tmpRhoR, constCR[i], sharedWeights[i], \
+#                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
+#            tmpEquilibriumB = calEquilibriumRK2DOriginal(tmpRhoB, constCB[i], sharedWeights[i], \
+#                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
             tmpEquilibriumTotal = tmpEquilibriumR + tmpEquilibriumB
             localSingleCollision[i] = (fluidPDFTotal[indices, i] - tmpEquilibriumTotal)
         #start MRT part
@@ -1379,30 +1399,30 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, unitEX,
             for j in range(9):
                 tmpSum += sharedTM[i, j] * localSingleCollision[j]
             localTransformation[i] = tmpSum
-        
+
         for i in range(9):
             localTransformation[i] = localTransformation[i] * localCollisionS[i]
-            
+
         for i in range(9):
             tmpSum = 0.
             for j in range(9):
                 tmpSum += sharedIM[i, j] * localTransformation[j]
-            fluidPDFTotal[indices, i] = -tmpSum + fluidPDFTotal[indices, i]        
+            fluidPDFTotal[indices, i] = -tmpSum + fluidPDFTotal[indices, i]
     cuda.syncthreads()
 
-    
+
 """
 Calculate the distribution function after adding the force term (MRT)
 """
 
 
-@cuda.jit('void(int64, int64, int64, float64, float64, float64[:], float64[:], float64[:], \
+@cuda.jit('void(int64, int64, int64, float64, float64, float64, float64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], float64[:], \
                 float64[:, :], float64[:, :], float64[:, :], float64[:], float64[:], \
                 float64[:])')
-def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, weightsCoeff, unitEX, \
-                               unitEY, physicalVX, physicalVY, forceX, forceY, \
-                               colorValue, fluidTotalPDF, transformationM, \
+def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, deltaValue, \
+                               weightsCoeff, unitEX, unitEY, physicalVX, physicalVY, \
+                               forceX, forceY, colorValue, fluidTotalPDF, transformationM, \
                                inverseTM, collisionS, fluidRhoR, fluidRhoB):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
@@ -1414,7 +1434,7 @@ def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, weights
     sharedTM = cuda.shared.array(shape = (9, 9), dtype = float64)
     sharedIM = cuda.shared.array(shape = (9, 9), dtype = float64)
 
-    localCollisionS = cuda.local.array(shape = (9,), dtype = float64)
+    localCollisionS = cuda.shared.array(shape = (9,), dtype = float64)
     localSource = cuda.local.array(shape = (9,), dtype = float64)
     localTransform = cuda.local.array(shape = (9,), dtype = float64)
     for i in range(9):
@@ -1423,19 +1443,25 @@ def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, weights
         for j in range(9):
             sharedTM[i, j] = transformationM[i, j]
             sharedIM[i, j] = inverseTM[i, j]
+    for i in range(9):
+        localCollisionS[i] = 1. - 0.5 * collisionS[i]
     if indices < totalNodes:
         Phi = colorValue[indices]; tmpTau = 1.
-        if optionF == 1:
-            tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
-                                 (tauB - 0.5)))
-        elif optionF == 2:
-            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
-            tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
-            tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
-            tmpTau = 3. * tmpMiu + 0.5
-        for i in range(9):
-            localCollisionS[i] = 1. - 0.5 * collisionS[i]
+        if Phi > deltaValue:
+            tmpTau = tauR
+        elif Phi < -deltaValue:
+            tmpTau = tauB
+        elif math.fabs(Phi) <= deltaValue:
+            if optionF == 1:
+                tmpTau = 0.5 + 3. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
+                                     (tauB - 0.5)))
+            elif optionF == 2:
+                ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+                tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
+                tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
+                tmpTau = 3. * tmpMiu + 0.5
+
         localCollisionS[7] = 1. - 0.5 * 1./tmpTau; localCollisionS[8] = 1. - 0.5 * 1./tmpTau
         tmpFX = forceX[indices]; tmpFY = forceY[indices]
         for i in range(9):

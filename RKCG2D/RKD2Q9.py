@@ -117,13 +117,7 @@ class RKColorGradientLBM():
                 print("The value for the surface strength shoudl be floats.")
                 sys.exit()
             print("Read the value for determining tau.")
-            try:
-                self.deltaValue = float(config['RKParameters']['DeltaValue'])
-            except KeyError:
-                print("Cannot find the parameter's name for determine the tau values.")
-                sys.exit()
-            except ValueError:
-                print("The value for determine tau should be a float.")
+
             self.constantCR = np.zeros(9, dtype = np.float64)
             self.constantCB = np.zeros(9, dtype = np.float64)
             self.constantB = np.zeros(9, dtype = np.float64)
@@ -139,6 +133,13 @@ class RKColorGradientLBM():
             self.constantBNew = np.ones(9, dtype = np.float64)
             self.constantBNew[0] = -2./9.
             self.constantBNew[1:5] = 1./9.; self.constantBNew[5:] = 1./36.
+        try:
+            self.deltaValue = float(config['RKParameters']['DeltaValue'])
+        except KeyError:
+            print("Cannot find the parameter's name for determine the tau values.")
+            sys.exit()
+        except ValueError:
+            print("The value for determine tau should be a float.")
         print("Read the values for taus.")
         try:
             self.tauR = float(config['FluidParameters']['TauR'])
@@ -1357,27 +1358,29 @@ class RKColorGradientLBM():
             if self.relaxationType == "'SRT'":
                 RKGPU2D.calRKCollision1TotalGPU2DSRTM[grid1D, threadPerBlock1D](totalNodes, \
                                                 self.xDimension, self.tauCalculation, self.tauR, self.tauB, \
-                                                deviceUnitEX, deviceUnitEY, \
+                                                self.deltaValue, deviceUnitEX, deviceUnitEY, \
                                                 deviceWeightsCoeff, devicePhysicalVX, \
                                                 devicePhysicalVY, deviceFluidRhoR, deviceFluidRhoB, \
                                                 deviceColorValue, deviceFluidPDFTotal)
                 print("Calculate the force perturbation for the total distribution function.")
                 RKGPU2D.calPerturbationFromForce2D[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \
-                                          self.tauCalculation, self.tauR, self.tauB, deviceWeightsCoeff, deviceUnitEX, \
+                                          self.tauCalculation, self.tauR, self.tauB, self.deltaValue, \
+                                          deviceWeightsCoeff, deviceUnitEX, \
                                           deviceUnitEY, devicePhysicalVX, devicePhysicalVY, \
                                           deviceForceX, deviceForceY, deviceColorValue, \
                                           deviceFluidPDFTotal, deviceFluidRhoR, deviceFluidRhoB)
             if self.relaxationType == "'MRT'":
                 RKGPU2D.calRKCollision1TotalGPU2DMRTM[grid1D, threadPerBlock1D](totalNodes, \
                                             self.xDimension, self.tauCalculation, self.tauR, self.tauB, \
-                                            deviceUnitEX, deviceUnitEY, deviceWeightsCoeff, \
+                                            self.deltaValue, deviceUnitEX, deviceUnitEY, deviceWeightsCoeff, \
                                             devicePhysicalVX, devicePhysicalVY, \
                                             deviceFluidRhoR, deviceFluidRhoB, \
                                             deviceColorValue, deviceFluidPDFTotal, \
                                             deviceTransformationM, deviceTransformationIM, \
                                             deviceCollisionM)
                 RKGPU2D.calPerturbationFromForce2DMRT[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \
-                                          self.tauCalculation, self.tauR, self.tauB, deviceWeightsCoeff, deviceUnitEX, \
+                                          self.tauCalculation, self.tauR, self.tauB, self.deltaValue, \
+                                          deviceWeightsCoeff, deviceUnitEX, \
                                           deviceUnitEY, devicePhysicalVX, devicePhysicalVY, \
                                           deviceForceX, deviceForceY, deviceColorValue, \
                                           deviceFluidPDFTotal, deviceTransformationM, \
