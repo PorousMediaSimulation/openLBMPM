@@ -1001,6 +1001,11 @@ def calColorValueOnSolid(totalSolidWetting, xDim, neighboringWettingSolid, \
                 tmpSum += sharedWeights[tmpIndices] * colorValueFluid[tmpLoc]
                 tmpSumCoeff += sharedWeights[tmpIndices]
         colorValueSolid[indices] = tmpSum / tmpSumCoeff
+
+
+"""
+
+"""
         
 @cuda.jit('void(int64, int64, int64, int64[:], int64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], float64[:])')
@@ -1039,8 +1044,6 @@ def calRKInitialGradient(totalNodes, xDim, numColorSolid, \
         tmpGradientX = 3. * tmpGradientX
         tmpGradientY = 3. * tmpGradientY
         gradientX[indices] = tmpGradientX; gradientY[indices] = tmpGradientY
-#        unitInitialNx[indices] = tmpGradientX / tmpGradientNorm
-#        unitInitialNy[indices] = tmpGradientY / tmpGradientNorm
     cuda.syncthreads()
         
 """
@@ -1387,10 +1390,6 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, deltaVa
                             sharedEX[i], sharedEY[i], tmpVX, tmpVY)
             tmpEquilibriumB = calEquilibriumRK2D(tmpRhoB, sharedWeights[i], \
                             sharedEX[i], sharedEY[i], tmpVX, tmpVY)
-#            tmpEquilibriumR = calEquilibriumRK2DOriginal(tmpRhoR, constCR[i], sharedWeights[i], \
-#                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
-#            tmpEquilibriumB = calEquilibriumRK2DOriginal(tmpRhoB, constCB[i], sharedWeights[i], \
-#                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
             tmpEquilibriumTotal = tmpEquilibriumR + tmpEquilibriumB
             localSingleCollision[i] = (fluidPDFTotal[indices, i] - tmpEquilibriumTotal)
         #start MRT part
@@ -1508,11 +1507,6 @@ def updateColorGradientOnWettingNew(totalFluidWettingNodes, xDim, cosTheta, sinT
     indices = by * xDim + bx * bDimX + tx
 
     if indices < totalFluidWettingNodes:
-#        tmpN1X = unitVectorNsx[indices] * cosTheta - unitVectorNsy[indices] * sinTheta
-#        tmpN1Y = unitVectorNsy[indices] * cosTheta + unitVectorNsx[indices] * sinTheta
-#        tmpN2X = unitVectorNsx[indices] * cosTheta + unitVectorNsy[indices] * sinTheta
-#        tmpN2Y = unitVectorNsy[indices] * cosTheta - unitVectorNsx[indices] * sinTheta
-        
         #Unit vector of gradient on fluid node
         tmpLoc = fluidNodesWetting[indices]
         tmpGradientNorm = math.sqrt(gradientX[tmpLoc] * gradientX[tmpLoc] + \
@@ -1558,10 +1552,13 @@ def updateColorGradientOnWettingNew(totalFluidWettingNodes, xDim, cosTheta, sinT
         gradientX[tmpLoc] = -tmpGradientNorm * tmpModifiedNX
         gradientY[tmpLoc] = -tmpGradientNorm * tmpModifiedNY
     cuda.syncthreads()
-    
+
+
 """
 Add the body force (including surface tension). Takashi 2018
 """
+
+
 @cuda.jit('void(int64, int64, float64, int64[:], float64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], float64[:])')
 def calForceTermInColorGradientNew2D(totalNodes, xDim, surfaceTension, neighboringNodes, \

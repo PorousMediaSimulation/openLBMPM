@@ -37,3 +37,16 @@ When the script, main.py, starts to run, it checks whether there is a folder cal
 2. Constant velocity
 3. Convective boundary (only for the outlet)
 4. Half-bounce back
+
+Constant pressure/velocity boundaries are implemented following Zou and He. The convective boundary is only the outlet of the simulated domain and it is equivalent to the free flux boundary condition. Half-bounce back boundary condition is for no-slip boundary between fluid and solid surface, which is an advantage of LBM to simulate flow and transport in pore space.
+
+
+**Buffering Layer:** *When fluid flow in pore structure is simulated, it is better to extend the simulated domain on the flow direction with a certain number of 'buffering layers' for minimizing the influence of boundaries.* 
+
+#Type of MCMP LBM in this package
+1. Original Shan-Chen model
+2. Explicit force scheme model
+3. Color gradient LBM 
+4. CSF-color gradient LBM
+
+
