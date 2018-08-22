@@ -50,3 +50,6 @@ Constant pressure/velocity boundaries are implemented following Zou and He. The 
 4. CSF-color gradient LBM
 
 
+#Examples
+##Contact angle
+![ContactAngle1](ExampleImages/ContactAngle150M100.png)
