@@ -10,7 +10,7 @@ OpenLBMPM is accelerated by GPU parallel computation, so it needs several suppor
 1. [CUDA](https://developer.nvidia.com/cuda-downloads)
 2. [Anaconda](https://www.anaconda.com/download/#linux)
 
-#How to use the codes
+# How to use the codes
 So far, there is no need to install this package. To run the simulation, bascially, inputting 'python main.py' under the directory of OpenLBMPM is enough. Then you can choose which kind of MCMP LBM is needed. The details on how to set up and run a simulation are shown below:
 1. Use git clone to get the copy of this packaged
 2. Set up the environmental variables in .bashrc (e.g., export PYTHONPATH=$PYTHONPATH:/PATH/PACKAGE/RKCG2D) for all LBM methods
@@ -32,7 +32,7 @@ When the script, main.py, starts to run, it checks whether there is a folder cal
 
 .png files are shown the distribution of each fluid at a certain time step. .h5 file stores the densities and distribution functions of each fluid and the velocities in each direction. This file can be easily read using tables or h5py.
 
-#Types of boundary conditions
+# Types of boundary conditions
 1. Contant pressure
 2. Constant velocity
 3. Convective boundary (only for the outlet)
@@ -50,6 +50,6 @@ Constant pressure/velocity boundaries are implemented following Zou and He. The 
 4. CSF-color gradient LBM
 
 
-#Examples
-##Contact angle
+# Examples
+## Contact angle
 ![ContactAngle1](ExampleImages/ContactAngle150M100.png)
