@@ -1,4 +1,4 @@
-# OpenLBMPM
+# OpenLBMPM (In development)
 OpenLBMPM is an open source lattice Boltzmann method (LBM) package for multicomponent and multiphase (MCMP) flow and transport in porous media. Currently, it includes Shan-Chen method and color gradient method for MCMP system. Currently, the transport part does not include any chemical reactions and phase change, but they will be added later. 
 
 D2Q9 and D3Q19 schemes are implemented to simulate fluid flow in 2D and 3D. To balance the accuracy and efficiency, D2Q5 and D3Q7 schemes are used to simulate the transport phenomena. 
@@ -52,4 +52,5 @@ Constant pressure/velocity boundaries are implemented following Zou and He. The 
 
 # Examples
 ## Contact angle
+Here the examples of contact angle from method 4 are shown. Compared to the other methods, this one can reach more accurate contact angle value without having unphysical mass diffusion layer on the solid phase surface. The contact angles are: (1) 150 degree; 
 ![ContactAngle1](ExampleImages/ContactAngle150M100.png)
