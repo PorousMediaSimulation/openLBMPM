@@ -568,3 +568,61 @@ def constantVelocityZHBoundaryHigherNewRK(totalNodes, nx, ny, xDim, \
                 fluidPDFB[indices, 7] = fluidPDFB[tmpFor7, 5]
             if tmpFor8 >= 0:
                 fluidPDFB[indices, 8] = fluidPDFB[tmpFor8, 6]
+
+
+"""
+Constant pressure boundary condition at the outlet of the domain
+"""
+
+
+@cuda.jit("void(int64, int64, int64, float64, int64[:], \
+                float64[:, :], float64[:], float64[:], float64[:], \
+                float64[:, :], float64[:, :])")
+def calConstPressureLowerGPUTotal(totalNodes, nx, xDim, constPL, fluidNodes, \
+                                  fluidPDFTotal, physicalVY, fluidRhoR, \
+                                  fluidRhoB, fluidPDFR, fluidPDFB):
+    tx = cuda.threadIdx.x;
+    bx = cuda.blockIdx.x;
+    bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+
+    if indices < totalNodes:
+        #    if indices < 2 * nx and indices >= nx:
+        tmpIndex = fluidNodes[indices]
+        if tmpIndex >= nx and tmpIndex < 2 * nx:
+            # for fluid B
+            tmpV = 1. - 1. / constPL * (fluidPDFTotal[indices, 0] + fluidPDFTotal[indices, 1] + \
+                                        fluidPDFTotal[indices, 3] + 2. * (fluidPDFTotal[indices, 4] + \
+                                                                          fluidPDFTotal[indices, 7] + fluidPDFTotal[
+                                                                              indices, 8]))
+            fluidPDFTotal[indices, 2] = fluidPDFTotal[indices, 4] + 2. / 3. * (constPL * tmpV)
+            fluidPDFTotal[indices, 5] = fluidPDFTotal[indices, 7] + 0.5 * (fluidPDFTotal[indices, 3] - \
+                                                                           fluidPDFTotal[
+                                                                               indices, 1]) + 1. / 6. * constPL * tmpV
+            fluidPDFTotal[indices, 6] = fluidPDFTotal[indices, 8] + 0.5 * (fluidPDFTotal[indices, 1] - \
+                                                                           fluidPDFTotal[
+                                                                               indices, 3]) + 1. / 6. * constPL * tmpV
+            physicalVY[indices] = tmpV
+            # fluid R
+            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidPDFR[indices, 2] = ratioR * fluidPDFTotal[indices, 2]
+            fluidPDFR[indices, 5] = ratioR * fluidPDFTotal[indices, 5]
+            fluidPDFR[indices, 6] = ratioR * fluidPDFTotal[indices, 6]
+            # fluid B
+            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidPDFB[indices, 2] = ratioB * fluidPDFTotal[indices, 2]
+            fluidPDFB[indices, 5] = ratioB * fluidPDFTotal[indices, 5]
+            fluidPDFB[indices, 6] = ratioB * fluidPDFTotal[indices, 6]
+    #        fluidRhoB[indices] = constPLB
+    # for fluid R
+    #        tmpVR = 1. - 1./constPLR * (fluidPDFR[indices, 0] + fluidPDFR[indices, 1] + \
+    #                fluidPDFR[indices, 3] + 2. * (fluidPDFR[indices, 4] + \
+    #                fluidPDFR[indices, 7] + fluidPDFR[indices, 8]))
+    #        fluidPDFR[indices, 2] = fluidPDFR[indices, 4] + 2./3. * constPLR * tmpVR
+    #        fluidPDFR[indices, 5] = fluidPDFR[indices, 7] + 0.5 * (fluidPDFR[indices, 3] - \
+    #                 fluidPDFR[indices, 1]) + 1./6. * constPLR * tmpVR
+    #        fluidPDFR[indices, 6] = fluidPDFR[indices, 8] + 0.5 * (fluidPDFR[indices, 1] - \
+    #                 fluidPDFR[indices, 3]) + 1./6. * constPLR * tmpVR
+    #        fluidRhoR[indices] = constPLR
+    cuda.syncthreads()
