@@ -614,15 +614,4 @@ def calConstPressureLowerGPUTotal(totalNodes, nx, xDim, constPL, fluidNodes, \
             fluidPDFB[indices, 2] = ratioB * fluidPDFTotal[indices, 2]
             fluidPDFB[indices, 5] = ratioB * fluidPDFTotal[indices, 5]
             fluidPDFB[indices, 6] = ratioB * fluidPDFTotal[indices, 6]
-    #        fluidRhoB[indices] = constPLB
-    # for fluid R
-    #        tmpVR = 1. - 1./constPLR * (fluidPDFR[indices, 0] + fluidPDFR[indices, 1] + \
-    #                fluidPDFR[indices, 3] + 2. * (fluidPDFR[indices, 4] + \
-    #                fluidPDFR[indices, 7] + fluidPDFR[indices, 8]))
-    #        fluidPDFR[indices, 2] = fluidPDFR[indices, 4] + 2./3. * constPLR * tmpVR
-    #        fluidPDFR[indices, 5] = fluidPDFR[indices, 7] + 0.5 * (fluidPDFR[indices, 3] - \
-    #                 fluidPDFR[indices, 1]) + 1./6. * constPLR * tmpVR
-    #        fluidPDFR[indices, 6] = fluidPDFR[indices, 8] + 0.5 * (fluidPDFR[indices, 1] - \
-    #                 fluidPDFR[indices, 3]) + 1./6. * constPLR * tmpVR
-    #        fluidRhoR[indices] = constPLR
     cuda.syncthreads()
