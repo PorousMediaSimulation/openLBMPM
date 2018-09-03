@@ -55,4 +55,4 @@ Constant pressure/velocity boundaries are implemented following Zou and He. The 
 Here the examples of contact angle from method 4 are shown. Compared to the other methods, this one can reach more accurate contact angle value without having unphysical mass diffusion layer on the solid phase surface. The contact angles are: (1) 150 degree; 
 ![ContactAngle1](ExampleImages/ContactAngle150M100.png)
 ## Capillary Intrusion
-![CapillaryIntrusion](EampleImage/CapillaryRise.gif)
+![CapillaryIntrusion](EampleImages/CapillaryRise.gif)
