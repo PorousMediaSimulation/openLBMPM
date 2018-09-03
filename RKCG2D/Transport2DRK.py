@@ -23,6 +23,7 @@ from SimpleGeometryRK import defineGeometry
 import AcceleratedRKGPU2D as RKGPU2D
 import AccelerateTransport2DRK as Transport2D
 from RKD2Q9 import RKColorGradientLBM
+import RKGPU2DBoundary as RKCG2DBC
 
 class Transport2DRK(RKColorGradientLBM):
     def __init__(self, pathInFile):
@@ -1194,65 +1195,92 @@ class Transport2DRK(RKColorGradientLBM):
                             deviceFluidPDFR, deviceFluidPDFB, deviceFluidPDFTotal)
             if self.boundaryTypeOutlet == "'Convective'":
                 print("Free boundary at the outlet.")
-                RKGPU2D.convectiveOutletGPU[grid1D, threadPerBlock1D](totalNodes, self.xDomain, \
-                                   self.xDimension, deviceFluidNodes, deviceNeighboringNodes, deviceFluidPDFR, \
-                                   deviceFluidPDFB, deviceFluidRhoR, deviceFluidRhoB)
-                RKGPU2D.convectiveOutletGhost2GPU[grid1D, threadPerBlock1D](totalNodes, \
-                                self.xDomain, self.xDimension, deviceFluidNodes, deviceNeighboringNodes, \
-                                deviceFluidPDFR, deviceFluidPDFB, deviceFluidRhoR, \
-                                deviceFluidRhoB)
-                RKGPU2D.convectiveOutletGhost3GPU[grid1D, threadPerBlock1D](totalNodes, \
-                                self.xDomain, self.xDimension, deviceFluidNodes, deviceNeighboringNodes, \
-                                deviceFluidPDFR, deviceFluidPDFB, deviceFluidRhoR, \
-                                deviceFluidRhoB)
+                RKCG2DBC.convectiveOutletGPU[grid1D, threadPerBlock1D](totalNodes, self.xDomain, \
+                                                                      self.xDimension, deviceFluidNodes,
+                                                                      deviceNeighboringNodes, deviceFluidPDFR, \
+                                                                      deviceFluidPDFB, deviceFluidRhoR, deviceFluidRhoB)
+                RKCG2DBC.convectiveOutletGhost2GPU[grid1D, threadPerBlock1D](totalNodes, \
+                                                                            self.xDomain, self.xDimension, deviceFluidNodes,
+                                                                            deviceNeighboringNodes, \
+                                                                            deviceFluidPDFR, deviceFluidPDFB,
+                                                                            deviceFluidRhoR, \
+                                                                            deviceFluidRhoB)
+                RKCG2DBC.convectiveOutletGhost3GPU[grid1D, threadPerBlock1D](totalNodes, \
+                                                                            self.xDomain, self.xDimension, deviceFluidNodes,
+                                                                            deviceNeighboringNodes, \
+                                                                            deviceFluidPDFR, deviceFluidPDFB,
+                                                                            deviceFluidRhoR, \
+                                                                            deviceFluidRhoB)
             elif self.boundaryTypeOutlet == "'Dirichlet'":
                 print("Use constant pressure/density boundary.")
-#                RKGPU2D.calConstPressureLowerGPU[grid1D, threadPerBlock1D](totalNodes, \
-#                                self.xDomain, self.xDimension, self.densityRhoBL, \
-#                                self.densityRhoRL, deviceFluidNodes, deviceFluidRhoB, \
-#                                deviceFluidRhoR, deviceFluidPDFB, \
-#                                deviceFluidPDFR)
+                #                RKGPU2D.calConstPressureLowerGPU[grid1D, threadPerBlock1D](totalNodes, \
+                #                                self.xDomain, self.xDimension, self.densityRhoBL, \
+                #                                self.densityRhoRL, deviceFluidNodes, deviceFluidRhoB, \
+                #                                deviceFluidRhoR, deviceFluidPDFB, \
+                #                                deviceFluidPDFR)
                 totalPressure = self.densityRhoBL + self.densityRhoRL
-                RKGPU2D.calConstPressureLowerGPUTotal[grid1D, threadPerBlock1D](totalNodes, \
-                                self.xDomain, self.xDimension, totalPressure, deviceFluidNodes, \
-                                deviceFluidPDFTotal, devicePhysicalVY, deviceFluidRhoR, \
-                                deviceFluidRhoB, deviceFluidPDFR, deviceFluidPDFB)
-                RKGPU2D.ghostPointsConstPressureLowerRK[grid1D, threadPerBlock1D](totalNodes, \
-                                self.xDomain, self.xDimension, deviceFluidNodes, \
-                                deviceNeighboringNodes, deviceFluidRhoR, deviceFluidRhoB, \
-                                deviceFluidPDFR, deviceFluidPDFB)
-            RKGPU2D.calMacroDensityRKGPU2D[grid1D, threadPerBlock1D](totalNodes, \
-                                          self.xDimension, deviceFluidPDFR, \
-                                          deviceFluidPDFB, deviceFluidRhoR, \
-                                          deviceFluidRhoB)
+                RKCG2DBC.calConstPressureLowerGPUTotal[grid1D, threadPerBlock1D](totalNodes, \
+                                                                                self.xDomain, self.xDimension,
+                                                                                totalPressure, deviceFluidNodes, \
+                                                                                deviceFluidPDFTotal, devicePhysicalVY,
+                                                                                deviceFluidRhoR, \
+                                                                                deviceFluidRhoB, deviceFluidPDFR,
+                                                                                deviceFluidPDFB)
+                RKCG2DBC.ghostPointsConstPressureLowerRK[grid1D, threadPerBlock1D](totalNodes, \
+                                                                                  self.xDomain, self.xDimension,
+                                                                                  deviceFluidNodes, \
+                                                                                  deviceNeighboringNodes, deviceFluidRhoR,
+                                                                                  deviceFluidRhoB, \
+                                                                                  deviceFluidPDFR, deviceFluidPDFB)
+
+            # RKGPU2D.calMacroDensityRKGPU2D[grid1D, threadPerBlock1D](totalNodes, \
+            #                                                          self.xDimension, deviceFluidPDFR, \
+            #                                                          deviceFluidPDFB, deviceFluidRhoR, \
+            #                                                          deviceFluidRhoB)
+
             if self.boundaryTypeInlet == "'Neumann'":
-                RKGPU2D.constantVelocityZHBoundaryHigherRK[grid1D, threadPerBlock1D](totalNodes, \
+                #                RKGPU2D.constantVelocityZHBoundaryHigherRK[grid1D, threadPerBlock1D](totalNodes, \
+                #                                        self.xDomain, self.yDomain, self.xDimension, \
+                #                                        self.velocityYR, self.velocityYB, deviceFluidNodes, \
+                #                                        deviceFluidRhoR, deviceFluidRhoB, deviceFluidPDFR, \
+                #                                        deviceFluidPDFB)
+                # RKGPU2D.constantVelocityZHBoundaryHigherNewRK[grid1D, threadPerBlock1D](totalNodes, \
+                #                                                                         self.xDomain, self.yDomain,
+                #                                                                         self.xDimension, \
+                #                                                                         self.velocityYR, self.velocityYB,
+                #                                                                         deviceFluidNodes, \
+                #                                                                         deviceNeighboringNodes,
+                #                                                                         deviceFluidRhoR, \
+                #                                                                         deviceFluidRhoB, deviceFluidPDFR, \
+                #                                                                         deviceFluidPDFB)
+                specificVY = self.velocityYB + self.velocityYR
+                RKCG2DBC.constantTotalVelocityInlet[grid1D, threadPerBlock1D](totalNodes, \
                                         self.xDomain, self.yDomain, self.xDimension, \
-                                        self.velocityYR, self.velocityYB, deviceFluidNodes, \
+                                        specificVY, deviceFluidNodes, deviceNeighboringNodes, \
                                         deviceFluidRhoR, deviceFluidRhoB, deviceFluidPDFR, \
-                                        deviceFluidPDFB)
-#                RKGPU2D.constantVelocityZHBoundaryHigherNewRK[grid1D, threadPerBlock1D](totalNodes, \
-#                                        self.xDomain, self.yDomain, self.xDimension, \
-#                                        self.velocityYR, self.velocityYB, deviceFluidNodes, \
-#                                        deviceNeighboringNodes, deviceFluidRhoR, \
-#                                        deviceFluidRhoB, deviceFluidPDFR, \
-#                                        deviceFluidPDFB)
-                RKGPU2D.ghostPointsConstantVelocityRK[grid1D, threadPerBlock1D](totalNodes, \
-                                        self.xDomain, self.yDomain, self.xDimension, deviceFluidNodes, \
-                                        deviceNeighboringNodes, deviceFluidRhoR, \
-                                        deviceFluidRhoB, deviceFluidPDFR, deviceFluidPDFB, \
-                                        deviceForceX, deviceForceY)
+                                        deviceFluidPDFB, deviceFluidPDFTotal, devicePhysicalVY)
+                RKCG2DBC.ghostPointsConstantVelocityRK[grid1D, threadPerBlock1D](totalNodes, \
+                                                                                self.xDomain, self.yDomain, self.xDimension,
+                                                                                deviceFluidNodes, \
+                                                                                deviceNeighboringNodes, deviceFluidRhoR, \
+                                                                                deviceFluidRhoB, deviceFluidPDFR,
+                                                                                deviceFluidPDFB, \
+                                                                                deviceForceX, deviceForceY)
             if self.boundaryTypeInlet == "'Dirichlet'":
                 print("Use constant pressure/density boundary.")
-                RKGPU2D.calConstPressureInletGPU[grid1D, threadPerBlock1D](totalNodes, \
-                                self.xDomain, self.yDomain, self.xDimension, self.densityRhoBH, \
-                                self.densityRhoRH, deviceFluidNodes, deviceFluidRhoB, \
-                                deviceFluidRhoR, deviceFluidPDFB, \
-                                deviceFluidPDFR)
-                RKGPU2D.ghostPointsConstPressureInletRK[grid1D, threadPerBlock1D](totalNodes, \
-                                self.xDomain, self.yDomain, self.xDimension, deviceFluidNodes, \
-                                deviceNeighboringNodes, deviceFluidRhoR, deviceFluidRhoB, \
-                                deviceFluidPDFR, deviceFluidPDFB)
+                RKCG2DBC.calConstPressureInletGPU[grid1D, threadPerBlock1D](totalNodes, \
+                                                                           self.xDomain, self.yDomain, self.xDimension,
+                                                                           self.densityRhoBH, \
+                                                                           self.densityRhoRH, deviceFluidNodes,
+                                                                           deviceFluidRhoB, \
+                                                                           deviceFluidRhoR, deviceFluidPDFB, \
+                                                                           deviceFluidPDFR)
+                RKCG2DBC.ghostPointsConstPressureInletRK[grid1D, threadPerBlock1D](totalNodes, \
+                                                                                  self.xDomain, self.yDomain,
+                                                                                  self.xDimension, deviceFluidNodes, \
+                                                                                  deviceNeighboringNodes, deviceFluidRhoR,
+                                                                                  deviceFluidRhoB, \
+                                                                                  deviceFluidPDFR, deviceFluidPDFB)
                 
             print("Calculate the macro-density of the fluids")
             RKGPU2D.calTotalFluidPDF[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \

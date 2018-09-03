@@ -615,3 +615,79 @@ def calConstPressureLowerGPUTotal(totalNodes, nx, xDim, constPL, fluidNodes, \
             fluidPDFB[indices, 5] = ratioB * fluidPDFTotal[indices, 5]
             fluidPDFB[indices, 6] = ratioB * fluidPDFTotal[indices, 6]
     cuda.syncthreads()
+
+
+@cuda.jit('void(int64, int64, int64, int64, float64, int64[:], \
+                int64[:], float64[:], float64[:], float64[:, :], float64[:, :], \
+                float64[:, :], float64[:])')
+def constantTotalVelocityInlet(totalNodes, nx, ny, xDim, \
+                               specificVY, fluidNodes, \
+                               neighboringNodes, fluidRhoR, \
+                               fluidRhoB, fluidPDFR, fluidPDFB, fluidPDFTotal,
+                               physicalVY):
+    tx = cuda.threadIdx.x;
+    bx = cuda.blockIdx.x;
+    bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+
+    #    if (indices < totalNodes - nx and indices >= totalNodes - 2 * nx):
+    if indices < totalNodes:
+        tmpStart = 8 * indices
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < (ny - 1) * nx and tmpIndex >= (ny - 2) * nx):
+            tmpTotalRho = (fluidPDFTotal[indices, 0] + fluidPDFTotal[indices, 1] + \
+                           fluidPDFTotal[indices, 3] + 2. * (fluidPDFTotal[indices, 2] + \
+                                                             fluidPDFTotal[indices, 5] + fluidPDFTotal[indices, 6])) / \
+                          (1. + specificVY)
+            #            fluidPDFTotal[indices, 4] = fluidPDFTotal[indices, 2] - 2./3. * \
+            #                    tmpTotalRho * specificVY
+            #            fluidPDFTotal[indices, 7] = fluidPDFTotal[indices, 5] + \
+            #                    (fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3]) / 2. - \
+            #                    1./6. * tmpTotalRho * specificVY
+            #            fluidPDFTotal[indices, 8] = fluidPDFTotal[indices, 6] - \
+            #                    (fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3]) / 2. - \
+            #                    1./6. * tmpTotalRho * specificVY
+            tmpEq2 = tmpTotalRho * 1. / 9. * (1. + 3. * (1. * specificVY) + 4.5 * (0. + \
+                                                                                   1. * specificVY) * (
+                                                          0. + 1. * specificVY) - 1.5 * (specificVY * \
+                                                                                         specificVY))
+            tmpEq4 = tmpTotalRho * 1. / 9. * (1. + 3. * (-1. * specificVY) + 4.5 * (0. + \
+                                                                                    (-1.) * specificVY) * (
+                                                          0. + (-1.) * specificVY) - 1.5 * (specificVY * \
+                                                                                            specificVY))
+            fluidPDFTotal[indices, 4] = tmpEq4 + (fluidPDFTotal[indices, 2] - tmpEq2)
+
+            tmpEq5 = tmpTotalRho * 1. / 36. * (1. + 3. * (1. * specificVY + 1. * 0.) + \
+                                               4.5 * (1. * specificVY + 1. * 0.) * (1. * specificVY + 1. * 0.) - \
+                                               1.5 * (specificVY * specificVY))
+            tmpEq7 = tmpTotalRho * 1. / 36. * (1. + 3. * ((-1.) * specificVY + (-1.) * \
+                                                          0.) + 4.5 * ((-1.) * specificVY + (-1.) * 0.) * (
+                                                           (-1.) * specificVY + \
+                                                           (-1.) * 0.) - 1.5 * (specificVY * specificVY))
+            fluidPDFTotal[indices, 7] = tmpEq7 + (fluidPDFTotal[indices, 5] - tmpEq5)
+
+            tmpEq6 = tmpTotalRho * 1. / 36. * (1. + 3. * ((1.) * specificVY + (-1.) * 0.) + \
+                                               4.5 * ((1.) * specificVY + (-1.) * 0.) * (1. * specificVY + \
+                                                                                         (-1.) * 0.) - 1.5 * (
+                                                           specificVY * specificVY))
+            tmpEq8 = tmpTotalRho * 1. / 36. * (1. + 3. * ((-1.) * specificVY + (1.) * 0.) + \
+                                               4.5 * ((-1.) * specificVY + 1. * 0.) * ((-1.) * specificVY + 1. * 0.) - \
+                                               1.5 * (specificVY * specificVY))
+            fluidPDFTotal[indices, 8] = tmpEq8 + (fluidPDFTotal[indices, 6] - tmpEq6)
+
+            # for fluid R
+            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidRhoR[indices] = ratioR * tmpTotalRho
+            fluidPDFR[indices, 4] = ratioR * fluidPDFTotal[indices, 4]
+            fluidPDFR[indices, 7] = ratioR * fluidPDFTotal[indices, 7]
+            fluidPDFR[indices, 8] = ratioR * fluidPDFTotal[indices, 8]
+
+            # for fluidB
+            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidRhoB[indices] = ratioB * tmpTotalRho
+            fluidPDFB[indices, 4] = ratioB * fluidPDFTotal[indices, 4]
+            fluidPDFB[indices, 7] = ratioB * fluidPDFTotal[indices, 7]
+            fluidPDFB[indices, 8] = ratioB * fluidPDFTotal[indices, 8]
+
+            physicalVY[indices] = specificVY

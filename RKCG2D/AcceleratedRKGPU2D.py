@@ -104,14 +104,18 @@ def calMacroDensityRKGPU2D(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
     indices = by * xDim + bx * bDimX + tx
      
     if (indices < totalNodes):
-        tmpRhoR = 0.; tmpRhoB = 0.
-        for i in range(9):
-            tmpRhoR += fluidPDFR[indices, i]
-            tmpRhoB += fluidPDFB[indices, i]
-#            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
-#            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
-        fluidRhoR[indices] = tmpRhoR
-        fluidRhoB[indices] = tmpRhoB
+        tmpLoc = fluidNodes[indices]
+        if tmpLoc < (ny - 2) * nx:
+            tmpRhoR = 0.;
+            tmpRhoB = 0.
+            for i in range(9):
+                tmpRhoR += fluidPDFR[indices, i]
+                tmpRhoB += fluidPDFB[indices, i]
+            #            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
+            #            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
+            fluidRhoR[indices] = tmpRhoR
+            fluidRhoB[indices] = tmpRhoB
+    cuda.syncthreads()
         
 """
 Calculate the macro-scale velocity
@@ -1334,18 +1338,21 @@ def calPhysicalVelocityRKGPU2DM(totalNodes, xDim, fluidPDFTotal, fluidRhoR, \
     indices = by * xDim + bx * bDimX + tx
 
     if (indices < totalNodes):
-        tmpVX = 0.; tmpVY = 0.
-        tmpRhoSum = fluidRhoB[indices] + fluidRhoR[indices]
-        tmpVX = fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3] + \
-                fluidPDFTotal[indices, 5] - fluidPDFTotal[indices, 6] - \
-                fluidPDFTotal[indices, 7] + fluidPDFTotal[indices, 8] + 0.5 * \
-                forceX[indices]
-        physicalVX[indices] = tmpVX / tmpRhoSum
-        tmpVY = fluidPDFTotal[indices, 2] - fluidPDFTotal[indices, 4] + \
-                fluidPDFTotal[indices, 5] + fluidPDFTotal[indices, 6] - \
-                fluidPDFTotal[indices, 7] - fluidPDFTotal[indices, 8] + 0.5 * \
-                forceY[indices]
-        physicalVY[indices] = tmpVY / tmpRhoSum
+        tmpLoc = fluidNodes[indices]
+        if tmpLoc < (ny - 2) * nx:
+            tmpVX = 0.;
+            tmpVY = 0.
+            tmpRhoSum = fluidRhoB[indices] + fluidRhoR[indices]
+            tmpVX = fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3] + \
+                    fluidPDFTotal[indices, 5] - fluidPDFTotal[indices, 6] - \
+                    fluidPDFTotal[indices, 7] + fluidPDFTotal[indices, 8] + 0.5 * \
+                    forceX[indices]
+            physicalVX[indices] = tmpVX / tmpRhoSum
+            tmpVY = fluidPDFTotal[indices, 2] - fluidPDFTotal[indices, 4] + \
+                    fluidPDFTotal[indices, 5] + fluidPDFTotal[indices, 6] - \
+                    fluidPDFTotal[indices, 7] - fluidPDFTotal[indices, 8] + 0.5 * \
+                    forceY[indices]
+            physicalVY[indices] = tmpVY / tmpRhoSum
     cuda.syncthreads()
 
 """
