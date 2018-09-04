@@ -19,7 +19,7 @@ So far, there is no need to install this package. To run the simulation, bascial
 4. Set up fluid properties, boundary conditions, and simulation time in the .ini file from the folder IniFiles.
 5. Input python main.py to run the simulation
 
-#Structure of the folder for results
+# Structure of the folder for results
 When the script, main.py, starts to run, it checks whether there is a folder called 'LBMResults' existing or not. If not, the new folder is created automatically. Then all the results from the simulation are saved in this folder. The structure of this folder is:
 
 '''
