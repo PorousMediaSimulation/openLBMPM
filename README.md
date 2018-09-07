@@ -58,3 +58,6 @@ Here the examples of contact angle from method 4 are shown. Compared to the othe
 ## Capillary Intrusion
 This is the example of capillary intrusion and the viscosity ratio here is 0.01 
 ![CapillaryIntrusion](ExampleImages/CapillaryRise.gif)
+## Drainage process
+This is the example of drainage process in pore space
+![DrainageProcess](ExampleImages/DrainagePoreSpace.gif)
