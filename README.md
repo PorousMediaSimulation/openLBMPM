@@ -9,10 +9,10 @@ There are two options for Shan-Chen method: (1) Original Shan-Chen method, which
 OpenLBMPM is accelerated by GPU parallel computation, so it needs several supporting packages:
 
 1. [CUDA](https://developer.nvidia.com/cuda-downloads)
-2. [Anaconda](https://www.anaconda.com/download/#linux)
+2. [Anaconda-python3.6](https://www.anaconda.com/download/#linux)
 
 # How to use the codes
-So far, there is no need to install this package. To run the simulation, bascially, inputting 'python main.py' under the directory of OpenLBMPM is enough. Then you can choose which kind of MCMP LBM is needed. The details on how to set up and run a simulation are shown below:
+So far, there is no need to install this package and the codes are tested under the Linux environmenta (Kubuntu  16.04LTS). To run the simulation. Inputting 'python main.py' under the directory of OpenLBMPM will start the simulation. Then you can choose which kind of MCMP LBM is needed. The details on how to set up and run a simulation are shown below:
 1. Use git clone to get the copy of this packaged
 2. Set up the environmental variables in .bashrc (e.g., export PYTHONPATH=$PYTHONPATH:/PATH/PACKAGE/RKCG2D) for all LBM methods
 3. Set up the geometry of the simulated domain in the file SimpleGeometry.py, which is usually not complicated or add the pore structure image to the designated folder (/home/$USER/StructureImage/)
