@@ -44,11 +44,11 @@ Constant pressure/velocity boundaries are implemented following Zou and He. The 
 
 **Buffering Layer:** *When fluid flow in pore structure is simulated, it is better to extend the simulated domain on the flow direction with a certain number of 'buffering layers' for minimizing the influence of boundaries.* 
 
-#Type of MCMP LBM in this package
+# Type of MCMP LBM in this package
 1. Original Shan-Chen model
 2. Explicit force scheme model
 3. Color gradient LBM 
-4. CSF-color gradient LBM
+4. CSF-color gradient LBM (The best option)
 
 
 # Examples
