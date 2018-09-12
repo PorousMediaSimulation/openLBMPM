@@ -190,17 +190,8 @@ class RKColorGradientLBM():
             sys.exit()
         
         #Option for body force
-        try:
-            self.isBodyForce = config['BodyForce']['isBodyForce']
-        except KeyError:
-            print("Cannot find the parameter for setting up the body force.")
-            sys.exit()
-        except ValueError:
-            print("The type of variable for setting up body force should be string.")
-            sys.exit()
-        if self.isBodyForce == "'yes'":
-            self.bodyFX = float(config['BodyForce']['bodyForceX'])
-            self.bodyFY = float(config['BodyForce']['bodyForceY'])
+        self.bodyFX = float(config['BodyForce']['bodyForceX'])
+        self.bodyFY = float(config['BodyForce']['bodyForceY'])
         #Read the simulation steps and time interval for exporting the results
         try:
             self.timeSteps = int(config['TimeSetup']['TimeSteps'])
@@ -1148,7 +1139,7 @@ class RKColorGradientLBM():
             RKGPU2D.calTotalFluidPDF[grid1D, threadPerBlock1D](totalNodes, self.xDimension, \
                                                                deviceFluidPDFR, deviceFluidPDFB,
                                                                deviceFluidPDFTotal)
-            RKGPU2D.calMacroDensityRKGPU2D[grid1D, threadPerBlock1D](totalNodes, \
+            RKGPU2D.calMacroDensityRKGPU2DNew[grid1D, threadPerBlock1D](totalNodes, \
                                                                      self.xDomain, self.yDomain, self.xDimension,
                                                                      deviceFluidNodes, deviceFluidPDFR, \
                                                                      deviceFluidPDFB, deviceFluidRhoR, \

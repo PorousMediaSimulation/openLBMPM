@@ -104,17 +104,14 @@ def calMacroDensityRKGPU2D(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
     indices = by * xDim + bx * bDimX + tx
      
     if (indices < totalNodes):
-        tmpLoc = fluidNodes[indices]
-        if tmpLoc < (ny - 2) * nx:
-            tmpRhoR = 0.;
-            tmpRhoB = 0.
-            for i in range(9):
-                tmpRhoR += fluidPDFR[indices, i]
-                tmpRhoB += fluidPDFB[indices, i]
-            #            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
-            #            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
-            fluidRhoR[indices] = tmpRhoR
-            fluidRhoB[indices] = tmpRhoB
+        tmpRhoR = 0.;tmpRhoB = 0.
+        for i in range(9):
+            tmpRhoR += fluidPDFR[indices, i]
+            tmpRhoB += fluidPDFB[indices, i]
+        #            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
+        #            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
+        fluidRhoR[indices] = tmpRhoR
+        fluidRhoB[indices] = tmpRhoB
     cuda.syncthreads()
         
 """
@@ -1710,4 +1707,27 @@ def calForceTermInColorGradientNew2D(totalNodes, xDim, surfaceTension, neighbori
 
         forceX[indices] = -0.5 * surfaceTension * KValue[indices] * gradientX[indices]
         forceY[indices] = -0.5 * surfaceTension * KValue[indices] * gradientY[indices]
+    cuda.syncthreads()
+
+
+@cuda.jit('void(int64, int64, float64[:, :], float64[:, :], float64[:], float64[:])')
+def calMacroDensityRKGPU2DNew(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
+                           fluidRhoB):
+    tx = cuda.threadIdx.x;
+    bx = cuda.blockIdx.x;
+    bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+
+    if (indices < totalNodes):
+        tmpLoc = fluidNodes[indices]
+        if tmpLoc < (ny - 2) * nx:
+            tmpRhoR = 0.; tmpRhoB = 0.
+            for i in range(9):
+                tmpRhoR += fluidPDFR[indices, i]
+                tmpRhoB += fluidPDFB[indices, i]
+            #            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
+            #            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
+            fluidRhoR[indices] = tmpRhoR
+            fluidRhoB[indices] = tmpRhoB
     cuda.syncthreads()
