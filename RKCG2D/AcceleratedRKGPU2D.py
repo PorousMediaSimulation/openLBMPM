@@ -49,6 +49,7 @@ def fillNeighboringNodes(totalNodes, nx, ny, xDim, fluidNodes, domainNewIndex, \
         #southeastern node
         tmpStart += 1
         neighboringNodes[tmpStart] = domainNewIndex[tmpL, tmpF]
+    cuda.syncthreads()
 
 """
 Calculate the neighboring nodes for wetting nodes in solid
@@ -91,12 +92,14 @@ def fillNeighboringWettingNodes(totalWettingNodes, nx, ny, xDim, wettingNodes, \
         #southeastern node
         tmpStart += 1
         neighboringWettingNodes[tmpStart] = domainNewIndex[tmpL, tmpF]
+    cuda.syncthreads()
 
  
 """
 Calculate the macro-density for 'red' and 'blue' fluids
 """
-@cuda.jit('void(int64, int64, float64[:, :], float64[:, :], float64[:], float64[:])')
+@cuda.jit('void(int64, int64, float64[:, :], float64[:, :], \
+                float64[:], float64[:])')
 def calMacroDensityRKGPU2D(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
                            fluidRhoB):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
@@ -104,12 +107,12 @@ def calMacroDensityRKGPU2D(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
     indices = by * xDim + bx * bDimX + tx
      
     if (indices < totalNodes):
-        tmpRhoR = 0.;tmpRhoB = 0.
+        tmpRhoR = 0.; tmpRhoB = 0.
         for i in range(9):
             tmpRhoR += fluidPDFR[indices, i]
             tmpRhoB += fluidPDFB[indices, i]
-        #            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
-        #            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
+#            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
+#            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
         fluidRhoR[indices] = tmpRhoR
         fluidRhoB[indices] = tmpRhoB
     cuda.syncthreads()
@@ -117,9 +120,9 @@ def calMacroDensityRKGPU2D(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
 """
 Calculate the macro-scale velocity
 """
-@cuda.jit('void(int64, int64, int64, int64[:], float64[:, :], float64[:, :], float64[:], float64[:], \
+@cuda.jit('void(int64, int64, float64[:, :], float64[:, :], float64[:], float64[:], \
                 float64[:], float64[:])')
-def calPhysicalVelocityRKGPU2D(totalNodes, nx, xDim, fluidNodes, fluidPDFR, fluidPDFB, fluidRhoR, \
+def calPhysicalVelocityRKGPU2D(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
                                fluidRhoB, physicalVX, physicalVY):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
@@ -127,9 +130,7 @@ def calPhysicalVelocityRKGPU2D(totalNodes, nx, xDim, fluidNodes, fluidPDFR, flui
      
     if (indices < totalNodes):
         tmpVX = 0.; tmpVY = 0.; tmpRho = 0.
-        tmpIndex = fluidNodes[indices]
-#        if (indices >= 3 * nx):
-#        if (tmpIndex >= 3 * nx):
+
         tmpRho = fluidRhoB[indices] + fluidRhoR[indices]
         tmpVX = fluidPDFR[indices, 1] - fluidPDFR[indices, 3] + fluidPDFR[indices, 5] - \
                 fluidPDFR[indices, 6] - fluidPDFR[indices, 7] + fluidPDFR[indices, 8] + \
@@ -141,6 +142,7 @@ def calPhysicalVelocityRKGPU2D(totalNodes, nx, xDim, fluidNodes, fluidPDFR, flui
                 fluidPDFB[indices, 2] - fluidPDFB[indices, 4] + fluidPDFB[indices, 5] + \
                 fluidPDFB[indices, 6] - fluidPDFB[indices, 7] - fluidPDFB[indices, 8]
         physicalVY[indices] = tmpVY / tmpRho
+    cuda.syncthreads()
     
 """
 Calcualte the tau's value for a location
@@ -196,16 +198,17 @@ def calRKCollision1GPU2DSRT(totalNodes, xDim, delta, tauR, tauB, unitEX, unitEY,
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
 
+    sharedEX = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedEY = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedCCR = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedCCB = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedWeights = cuda.shared.array(shape = (9,), dtype = float64)
+    for i in range(9):
+        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
+        sharedCCR[i] = constantCR[i]; sharedCCB[i] = constantCB[i]
+        sharedWeights[i] = weightsCoeff[i]
+
     if (indices < totalNodes):
-        sharedEX = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedEY = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedCCR = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedCCB = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedWeights = cuda.shared.array(shape = (9,), dtype = float64)
-        for i in range(9):
-            sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
-            sharedCCR[i] = constantCR[i]; sharedCCB[i] = constantCB[i]
-            sharedWeights[i] = weightsCoeff[i]
             
         Phi = (fluidRhoR[indices] - fluidRhoB[indices]) / (fluidRhoR[indices] + \
               fluidRhoB[indices])
@@ -234,33 +237,34 @@ def calRKCollision1GPU2DSRT(totalNodes, xDim, delta, tauR, tauB, unitEX, unitEY,
 """
 Calculate the second and third collisions
 """        
-@cuda.jit('void(int64, int64, float64, float64, float64, float64, float64, \
+@cuda.jit('void(int64, int64, float64, float64, float64, float64, \
                 int64[:], int64[:], float64[:], float64[:], float64[:], float64[:],\
                 float64[:], float64[:], float64[:], float64[:], float64[:], float64[:, :], \
                 float64[:, :], float64[:], float64[:])')
-def calRKCollision23GPU(totalNodes, xDim, betaCoeff, AkR, AkB, solidRhoR, solidRhoB, \
+def calRKCollision23GPU(totalNodes, xDim, betaCoeff, AkR, AkB, solidDiff, \
                         fluidNodes, neighboringNodes, constantB, weightsCoeff, \
                         unitEX, unitEY, schemeGradient, fluidRhoR, fluidRhoB, \
                         constantCR, constantCB, fluidPDFR, fluidPDFB, CGX, CGY):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
+
+    sharedEX = cuda.shared.array((9,), dtype = float64)
+    sharedEY = cuda.shared.array((9,), dtype = float64)
+    sharedCB = cuda.shared.array((9,), dtype = float64)
+    sharedWeights = cuda.shared.array((9,), dtype = float64)
+    sharedScheme = cuda.shared.array((9,), dtype = float64)
+    sharedConsCR = cuda.shared.array((9,), dtype = float64)
+    sharedConsCB = cuda.shared.array((9,), dtype = float64)
+    for i in range(9):
+        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
+        sharedCB[i] = constantB[i]
+        sharedWeights[i] = weightsCoeff[i]
+        sharedScheme[i] = schemeGradient[i]
+        sharedConsCR[i] = constantCR[i]
+        sharedConsCB[i] = constantCB[i]
      
     if (indices < totalNodes):
-        sharedEX = cuda.shared.array((9,), dtype = float64)
-        sharedEY = cuda.shared.array((9,), dtype = float64)
-        sharedCB = cuda.shared.array((9,), dtype = float64)
-        sharedWeights = cuda.shared.array((9,), dtype = float64)
-        sharedScheme = cuda.shared.array((9,), dtype = float64)
-        sharedConsCR = cuda.shared.array((9,), dtype = float64)
-        sharedConsCB = cuda.shared.array((9,), dtype = float64)
-        for i in range(9):
-            sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
-            sharedCB[i] = constantB[i]
-            sharedWeights[i] = weightsCoeff[i]
-            sharedScheme[i] = schemeGradient[i]
-            sharedConsCR[i] = constantCR[i]
-            sharedConsCB[i] = constantCB[i]
         #calculate the color gradient around the location
         tmpGradientX = 0.; tmpGradientY = 0.
         tmpStart = 8 * indices; tmpIndex = 0
@@ -274,7 +278,7 @@ def calRKCollision23GPU(totalNodes, xDim, betaCoeff, AkR, AkB, solidRhoR, solidR
                 tmpGradientY += sharedScheme[tmpIndex] * sharedEY[tmpIndex] * \
                                 (fluidRhoR[tmpLocNeighbor] - fluidRhoB[tmpLocNeighbor])
             else:
-                tmpDiff = solidRhoR - solidRhoB
+                tmpDiff = solidDiff
                 tmpGradientX += sharedScheme[tmpIndex] * sharedEX[tmpIndex] * \
                                 tmpDiff
                 tmpGradientY += sharedScheme[tmpIndex] * sharedEY[tmpIndex] * \
@@ -496,7 +500,385 @@ def calRKCollision1GPU2DMRT(totalNodes, xDim, delta, tauR, tauB, unitEX, unitEY,
             fluidPDFR[indices, i] = fluidPDFR[indices, i] - tmpFR
             fluidPDFB[indices, i] = fluidPDFB[indices, i] - tmpFB
     cuda.syncthreads()
+    
+"""
+Calculate the second and third collisions
+"""        
+@cuda.jit('void(int64, int64, float64, float64, float64, float64, \
+                int64[:], int64[:], float64[:], float64[:], float64[:], float64[:],\
+                float64[:], float64[:], float64[:], float64[:], float64[:], float64[:, :], \
+                float64[:, :], float64[:], float64[:])')
+def calRKCollision23GPU(totalNodes, xDim, betaCoeff, AkR, AkB, solidDiff, \
+                        fluidNodes, neighboringNodes, constantB, weightsCoeff, \
+                        unitEX, unitEY, schemeGradient, fluidRhoR, fluidRhoB, \
+                        constantCR, constantCB, fluidPDFR, fluidPDFB, CGX, CGY):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+     
+    if (indices < totalNodes):
+        sharedEX = cuda.shared.array((9,), dtype = float64)
+        sharedEY = cuda.shared.array((9,), dtype = float64)
+        sharedCB = cuda.shared.array((9,), dtype = float64)
+        sharedWeights = cuda.shared.array((9,), dtype = float64)
+        sharedScheme = cuda.shared.array((9,), dtype = float64)
+        sharedConsCR = cuda.shared.array((9,), dtype = float64)
+        sharedConsCB = cuda.shared.array((9,), dtype = float64)
+        for i in range(9):
+            sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
+            sharedCB[i] = constantB[i]
+            sharedWeights[i] = weightsCoeff[i]
+            sharedScheme[i] = schemeGradient[i]
+            sharedConsCR[i] = constantCR[i]
+            sharedConsCB[i] = constantCB[i]
+        #calculate the color gradient around the location
+        tmpGradientX = 0.; tmpGradientY = 0.
+        tmpStart = 8 * indices; tmpIndex = 0
+        for i in range(8):
+            tmpIndex += 1
+            tmpNeighboring = tmpStart + i
+            if (neighboringNodes[tmpNeighboring] != -1):
+                tmpLocNeighbor = neighboringNodes[tmpNeighboring]
+                tmpGradientX += sharedScheme[tmpIndex] * sharedEX[tmpIndex] * \
+                                (fluidRhoR[tmpLocNeighbor] - fluidRhoB[tmpLocNeighbor])
+                tmpGradientY += sharedScheme[tmpIndex] * sharedEY[tmpIndex] * \
+                                (fluidRhoR[tmpLocNeighbor] - fluidRhoB[tmpLocNeighbor])
+            else:
+                tmpDiff = solidDiff
+                tmpGradientX += sharedScheme[tmpIndex] * sharedEX[tmpIndex] * \
+                                tmpDiff
+                tmpGradientY += sharedScheme[tmpIndex] * sharedEY[tmpIndex] * \
+                                tmpDiff
+        #Calculate the second collision part
+        tmpSquareGradient = tmpGradientX * tmpGradientX + tmpGradientY * \
+                            tmpGradientY
+        tmpNormGradient = math.sqrt(tmpSquareGradient)
+        CGX[indices] = tmpGradientX; CGY[indices] = tmpSquareGradient
+        CGY[indices] = 0.
+        for i in range(9):
+            tmpSecondCollisionR = 0.; tmpSecondCollisionB = 0.
+            if (tmpSquareGradient == 0.):
+#            CGY[indices] = tmpSquareGradient
+#            if (math.isnan(tmpPartCollision) == 1 or math.isinf(tmpPartCollision) == 1):
+                tmpSecondCollisionR = 0.; tmpSecondCollisionB = 0.
+            else:
+                tmpPartCollision = sharedWeights[i] * math.pow((sharedEX[i] * tmpGradientX + \
+                                sharedEY[i] * tmpGradientY), 2) / tmpSquareGradient
+                tmpSecondCollisionR = AkR * 0.5 * tmpNormGradient * (tmpPartCollision - \
+                                    sharedCB[i])
+                tmpSecondCollisionB = AkB * 0.5 * tmpNormGradient * (tmpPartCollision - \
+                                    sharedCB[i])
+            fluidPDFR[indices, i] = fluidPDFR[indices, i] + tmpSecondCollisionR
+            fluidPDFB[indices, i] = fluidPDFB[indices, i] + tmpSecondCollisionB
+        #Calculate the re-coloring part
+        tmpRhoSum = fluidRhoR[indices] + fluidRhoB[indices]
+        tmpRhoMul = fluidRhoR[indices] * fluidRhoB[indices]
+        tmpRhoSumSquare = tmpRhoSum * tmpRhoSum
+        for i in range(9):
+            tmpUnitSqrt = math.sqrt(sharedEX[i] * sharedEX[i] + sharedEY[i] * \
+                        sharedEY[i])
+            cosTheta = 0.
+            if (tmpUnitSqrt == 0. or tmpNormGradient == 0.):
+                cosTheta = 0.
+            else:
+                cosTheta = (sharedEX[i] * tmpGradientX + sharedEY[i] * tmpGradientY) / \
+                        (math.sqrt(sharedEX[i] * sharedEX[i] + sharedEY[i] * \
+                        sharedEY[i]) * tmpNormGradient)
+#            if (math.isnan(cosTheta) == 1 or math.isinf(cosTheta) == 1):
+#                cosTheta = 0.
+            tmpFeqRho = fluidRhoR[indices] * sharedConsCR[i] + fluidRhoB[indices] * \
+                        sharedConsCB[i]
+            tmpSumPDF = fluidPDFR[indices, i] + fluidPDFB[indices, i]
+            #re-coloring
+            fluidPDFR[indices, i] = fluidRhoR[indices]/tmpRhoSum * tmpSumPDF + \
+                            (betaCoeff * tmpRhoMul / tmpRhoSumSquare) * tmpFeqRho * \
+                            cosTheta
+            fluidPDFB[indices, i] = fluidRhoB[indices]/tmpRhoSum * tmpSumPDF - \
+                            (betaCoeff * tmpRhoMul / tmpRhoSumSquare) * tmpFeqRho * \
+                            cosTheta
+    cuda.syncthreads()
+    
+"""
+Update the ghost points with constant velocity boundary
+"""
+@cuda.jit('void(int64, int64, int64, int64, int64[:], int64[:], \
+                float64[:], float64[:], float64[:, :], float64[:, :], float64[:], \
+                float64[:])')
+def ghostPointsConstantVelocityRK(totalNodes, nx, ny, xDim, fluidNodes, \
+                                neighboringNodes, fluidRhoR, fluidRhoB, fluidPDFR, \
+                                fluidPDFB, forceX, forceY):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+     
+    if (indices < totalNodes):
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < ny * nx and tmpIndex >= (ny - 1) * nx):
+            tmpStart = 8 * indices + 3
+            tmpL = neighboringNodes[tmpStart]
+
+            fluidPDFR[indices, 0] = fluidPDFR[tmpL, 0]
+            fluidPDFR[indices, 1] = fluidPDFR[tmpL, 1]
+            fluidPDFR[indices, 2] = fluidPDFR[tmpL, 2]
+            fluidPDFR[indices, 3] = fluidPDFR[tmpL, 3]
+            fluidPDFR[indices, 4] = fluidPDFR[tmpL, 4]
+            fluidPDFR[indices, 5] = fluidPDFR[tmpL, 5]
+            fluidPDFR[indices, 6] = fluidPDFR[tmpL, 6]
+            fluidPDFR[indices, 7] = fluidPDFR[tmpL, 7]
+            fluidPDFR[indices, 8] = fluidPDFR[tmpL, 8]
+            fluidRhoR[indices] = fluidPDFR[indices, 0] + fluidPDFR[indices, 1] + \
+                    fluidPDFR[indices, 2] + fluidPDFR[indices, 3] + \
+                    fluidPDFR[indices, 4] + fluidPDFR[indices, 5] + \
+                    fluidPDFR[indices, 6] + fluidPDFR[indices, 7] + \
+                    fluidPDFR[indices, 8]
+#            forceX[indices] = 0.; forceY[indices] = 0.   
+                    
+            fluidPDFB[indices, 0] = fluidPDFB[tmpL, 0]
+            fluidPDFB[indices, 1] = fluidPDFB[tmpL, 1]
+            fluidPDFB[indices, 2] = fluidPDFB[tmpL, 2]
+            fluidPDFB[indices, 3] = fluidPDFB[tmpL, 3]
+            fluidPDFB[indices, 4] = fluidPDFB[tmpL, 4]
+            fluidPDFB[indices, 5] = fluidPDFB[tmpL, 5]
+            fluidPDFB[indices, 6] = fluidPDFB[tmpL, 6]
+            fluidPDFB[indices, 7] = fluidPDFB[tmpL, 7]
+            fluidPDFB[indices, 8] = fluidPDFB[tmpL, 8]
+            fluidRhoB[indices] = fluidPDFB[indices, 0] + fluidPDFB[indices, 1] + \
+                    fluidPDFB[indices, 2] + fluidPDFB[indices, 3] + \
+                    fluidPDFB[indices, 4] + fluidPDFB[indices, 5] + \
+                    fluidPDFB[indices, 6] + fluidPDFB[indices, 7] + \
+                    fluidPDFB[indices, 8]
+    cuda.syncthreads()
+    
+"""
+Calculate Von Neumann boundary condition with Zou-He method
+"""
+@cuda.jit('void(int64, int64, int64, int64, float64, float64, int64[:], \
+                float64[:], float64[:], float64[:, :], float64[:, :])')
+def constantVelocityZHBoundaryHigherRK(totalNodes, nx, ny, xDim, \
+                                        specificVYR, specificVYB, fluidNodes, fluidRhoR, \
+                                        fluidRhoB, fluidPDFR, fluidPDFB):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+     
+    if (indices < totalNodes):
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < (ny - 1) * nx and tmpIndex >= (ny - 2) * nx):
+            fluidRhoR[indices] = (fluidPDFR[indices, 0] + fluidPDFR[indices, 1] + \
+                    fluidPDFR[indices, 3] + 2. * (fluidPDFR[indices, 2] + \
+                    fluidPDFR[indices, 5] + fluidPDFR[indices, 6])) / \
+                    (1. + specificVYR)
+            fluidPDFR[indices, 4] = fluidPDFR[indices, 2] - 2./3. * \
+                    fluidRhoR[indices] * specificVYR
+            fluidPDFR[indices, 7] = fluidPDFR[indices, 5] + \
+                    (fluidPDFR[indices, 1] - fluidPDFR[indices, 3]) / 2. - \
+                    1./6. * fluidRhoR[indices] * specificVYR
+            fluidPDFR[indices, 8] = fluidPDFR[indices, 6] - \
+                    (fluidPDFR[indices, 1] - fluidPDFR[indices, 3]) / 2. - \
+                    1./6. * fluidRhoR[indices] * specificVYR
+                    
+            fluidRhoB[indices] = (fluidPDFB[indices, 0] + fluidPDFB[indices, 1] + \
+                    fluidPDFB[indices, 3] + 2. * (fluidPDFB[indices, 2] + \
+                    fluidPDFB[indices, 5] + fluidPDFB[indices, 6])) / \
+                    (1. + specificVYB)
+            fluidPDFB[indices, 4] = fluidPDFB[indices, 2] - 2./3. * \
+                    fluidRhoB[indices] * specificVYB
+            fluidPDFB[indices, 7] = fluidPDFB[indices, 5] + \
+                    (fluidPDFB[indices, 1] - fluidPDFB[indices, 3]) / 2. - \
+                    1./6. * fluidRhoB[indices] * specificVYB
+            fluidPDFB[indices, 8] = fluidPDFB[indices, 6] - \
+                    (fluidPDFB[indices, 1] - fluidPDFB[indices, 3]) / 2. - \
+                    1./6. * fluidRhoB[indices] * specificVYB
+    cuda.syncthreads()
+    
+
+"""
+Calculate the outlet boundary with convective flow method. 
+"""
+@cuda.jit('void(int64, int64, int64, int64[:], int64[:], float64[:, :], float64[:, :], \
+                float64[:], float64[:])')
+def convectiveOutletGPU(totalNodes, nx, xDim, fluidNodes, neighboringNodes, \
+                        fluidPDFR, fluidPDFB, fluidRhoR, fluidRhoB):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    #calculate the average velocity
+    tmpSumV = 0.
+    tmpStart = 3 * nx
+ 
+    if (indices < totalNodes):
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < 3 * nx and tmpIndex >= 2 * nx):
+            tmpNeighbor = neighboringNodes[8 * indices + 1]
+            fluidRhoR[indices] = 0.; fluidRhoB[indices] = 0.
+            for j in range(9):
+                fluidPDFR[indices, j] = fluidPDFR[tmpNeighbor, j]
+                fluidPDFB[indices, j] = fluidPDFB[tmpNeighbor, j]
+#                fluidPDFR[indices, j] = fluidPDFR[indices + nx - 2, j]
+#                fluidPDFB[indices, j] = fluidPDFB[indices + nx - 2, j]
+#                               (fluidPDFOld[i, indices, j] + \
+#                            averageV * fluidPDFNew[i, indices + nx, j]) / (1. + \
+#                            averageV)
+                fluidRhoR[indices] += fluidPDFR[indices, j]
+                fluidRhoB[indices] += fluidPDFB[indices, j]
+    cuda.syncthreads()
+     
+"""
+Calculate the outlet boundary ghost nodes in second layer with convective flow method. 
+"""
+@cuda.jit('void(int64, int64, int64, int64[:], int64[:], float64[:, :], float64[:, :], \
+                float64[:], float64[:])')
+def convectiveOutletGhost2GPU(totalNodes, nx, xDim, fluidNodes, neighboringNodes, \
+                              fluidPDFR, fluidPDFB, fluidRhoR, fluidRhoB):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    #calculate the average velocity
+    tmpSumV = 0.
+    tmpStart = 3 * nx
+ 
+    if (indices < totalNodes):
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < 2 * nx and tmpIndex >= nx):
+            tmpNeighbor = neighboringNodes[8 * indices + 1]
+            fluidRhoR[indices] = 0.; fluidRhoB[indices] = 0.
+            for j in range(9):
+                fluidPDFR[indices, j] = fluidPDFR[tmpNeighbor, j]
+                fluidPDFB[indices, j] = fluidPDFB[tmpNeighbor, j]
+#                fluidPDFR[indices, j] = fluidPDFR[indices + nx -2, j]
+##                               (fluidPDFOld[i, indices, j] + \
+##                            averageV * fluidPDFNew[i, indices + nx, j]) / (1. + \
+##                            averageV)
+#                fluidPDFB[indices, j] = fluidPDFB[indices + nx -2, j]
+                fluidRhoR[indices] += fluidPDFR[indices, j]
+                fluidRhoB[indices] += fluidPDFB[indices, j]                
+    cuda.syncthreads()
+#     
+"""
+Calculate the outlet boundary ghost nodes in first layer with convective flow method. 
+"""
+@cuda.jit('void(int64, int64, int64, int64[:], int64[:], float64[:, :], float64[:, :], \
+                float64[:], float64[:])')
+def convectiveOutletGhost3GPU(totalNodes, nx, xDim, fluidNodes, neighboringNodes, \
+                              fluidPDFR, fluidPDFB, fluidRhoR, fluidRhoB):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    #calculate the average velocity
+    tmpSumV = 0.
+    tmpStart = 3 * nx
+ 
+    if (indices < totalNodes):
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < nx and tmpIndex >= 0):
+            tmpNeighbor = neighboringNodes[8 * indices + 1]
+            fluidRhoR[indices] = 0.; fluidRhoB[indices] = 0.
+            for j in range(9):
+                fluidPDFR[indices, j] = fluidPDFR[tmpNeighbor, j]
+                fluidPDFB[indices, j] = fluidPDFB[tmpNeighbor, j]
+#                               (fluidPDFOld[i, indices, j] + \
+#                            averageV * fluidPDFNew[i, indices + nx, j]) / (1. + \
+#                            averageV)
+                fluidRhoR[indices] += fluidPDFR[indices, j]
+                fluidRhoB[indices] += fluidPDFB[indices, j]
+    cuda.syncthreads()
                 
+"""
+Calculate the boundary flow from convective-average method
+"""
+@cuda.jit("void(int64, int64, int64, int64[:], int64[:], float64[:], float64[:, :], float64[:, :], \
+                float64[:, :], float64[:, :])")
+def convectiveAverageBoundaryGPU(totalNodes, nx, xDim, fluidNodes, neighboringNodes, normalVelocity, \
+                              fluidPDFR, fluidPDFB, fluidPDFROld, fluidPDFBOld):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    
+    if indices < totalNodes:
+#        tmpSumVNorm = 0.
+#        for i in range(nx - 2):
+#            tmpSumVNorm += normalVelocity[3 * (nx - 2) + i]
+#        averageNormalV = tmpSumVNorm / (nx - 2)
+        #for Nth layer
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < 3 * nx and tmpIndex >= 2 * nx):
+            tmpNeighbor = neighboringNodes[8 * indices + 1]
+            averageNormalV = abs(normalVelocity[tmpNeighbor])
+            for j in range(9):
+                fluidPDFR[indices, j] = (fluidPDFROld[indices, j] + averageNormalV * \
+                         fluidPDFR[tmpNeighbor, j]) / (1. + averageNormalV)
+                fluidPDFB[indices, j] = (fluidPDFBOld[indices, j] + averageNormalV * \
+                         fluidPDFB[tmpNeighbor, j]) / (1. + averageNormalV)
+            normalVelocity[indices] = normalVelocity[tmpNeighbor]
+    cuda.syncthreads()
+                
+"""
+Calculate the boundary flow from convective-average method
+"""
+@cuda.jit("void(int64, int64, int64, int64[:], int64[:], float64[:], float64[:, :], float64[:, :], \
+                float64[:, :], float64[:, :])")
+def convectiveAverageBoundaryGPU2(totalNodes, nx, xDim, fluidNodes, neighboringNodes, normalVelocity, \
+                              fluidPDFR, fluidPDFB, fluidPDFROld, fluidPDFBOld):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    
+    if indices < totalNodes:
+#        tmpSumVNorm = 0.
+#        for i in range(nx - 2):
+#            tmpSumVNorm += normalVelocity[3 * (nx - 2) + i]
+#        averageNormalV = tmpSumVNorm / (nx - 2)
+#        #for Nth layer
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < 2 * nx and tmpIndex >= nx):
+            tmpNeighbor1 = neighboringNodes[8 * indices + 1]
+            tmpNeighbor = neighboringNodes[8 * tmpNeighbor1 + 1]
+#            averageNormalV = abs(normalVelocity[indices + 2 * (nx - 2)])
+            averageNormalV = abs(normalVelocity[tmpNeighbor])
+            for j in range(9):
+                fluidPDFR[indices, j] = (fluidPDFROld[indices, j] + averageNormalV * \
+                         fluidPDFR[tmpNeighbor1, j]) / (1. + averageNormalV)
+                fluidPDFB[indices, j] = (fluidPDFBOld[indices, j] + averageNormalV * \
+                         fluidPDFB[tmpNeighbor1, j]) / (1. + averageNormalV)
+#            normalVelocity[indices] = normalVelocity[indices + 2 * (nx - 2)]
+            normalVelocity[indices] = normalVelocity[tmpNeighbor]
+    cuda.syncthreads()
+                
+"""
+Calculate the boundary flow from convective-average method
+"""
+@cuda.jit("void(int64, int64, int64, int64[:], int64[:], float64[:], float64[:, :], float64[:, :], \
+                float64[:, :], float64[:, :])")
+def convectiveAverageBoundaryGPU3(totalNodes, nx, xDim, fluidNodes, neighboringNodes, normalVelocity, \
+                              fluidPDFR, fluidPDFB, fluidPDFROld, fluidPDFBOld):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    
+    if indices < totalNodes:
+#        tmpSumVNorm = 0.
+#        for i in range(nx - 2):
+#            tmpSumVNorm += normalVelocity[3 * (nx - 2) + i]
+#        averageNormalV = tmpSumVNorm / (nx - 2)
+        #for Nth layer
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < nx and tmpIndex >= 0):
+            tmpNeighbor2 = neighboringNodes[8 * indices + 1]
+            tmpNeighbor1 = neighboringNodes[8 * tmpNeighbor2 + 1]
+            tmpNeighbor = neighboringNodes[8 * tmpNeighbor1 + 1]
+#            averageNormalV = abs(normalVelocity[indices + 3 * (nx - 2)])
+            averageNormalV = abs(normalVelocity[tmpNeighbor])
+            for j in range(9):
+                fluidPDFR[indices, j] = (fluidPDFROld[indices, j] + averageNormalV * \
+                         fluidPDFR[tmpNeighbor2, j]) / (1. + averageNormalV)
+                fluidPDFB[indices, j] = (fluidPDFBOld[indices, j] + averageNormalV * \
+                         fluidPDFB[tmpNeighbor2, j]) / (1. + averageNormalV)
+#            normalVelocity[indices] = normalVelocity[indices + 3 * (nx - 2)]
+            normalVelocity[indices] = normalVelocity[tmpNeighbor]
+    cuda.syncthreads()
+                
+
+
 """
 Update the fluid distribution function on the outlet
 """
@@ -536,6 +918,204 @@ def copyFluidPDFRecoverOutlet(totalNodes, nx, xDim, fluidNodes, fluidPDFR, fluid
     cuda.syncthreads()
 
 """
+Constant pressure boundary condition at the inlet of the domain
+"""
+@cuda.jit("void(int64, int64, int64, int64, float64, float64, int64[:], \
+                float64[:], float64[:], float64[:, :], float64[:, :])")
+def calConstPressureInletGPU(totalNodes, nx, ny, xDim, constPHB, constPHR, fluidNodes, \
+                            fluidRhoB, fluidRhoR, fluidPDFB, fluidPDFR):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by *xDim + bx * bDimX + tx
+    
+    if indices < totalNodes:
+        tmpIndex = fluidNodes[indices]
+        if tmpIndex >= (ny - 2) * nx and tmpIndex < (ny - 1) * nx:
+            #for fluid B
+            tmpVB = -1. + (fluidPDFB[indices, 0] + \
+                fluidPDFB[indices, 1] + fluidPDFB[indices, 3] + \
+                2. * (fluidPDFB[indices, 2] + fluidPDFB[indices, 5] + \
+                fluidPDFB[indices, 6])) / constPHB
+            fluidPDFB[indices, 4] = fluidPDFB[indices, 2] - 2. / 3. * \
+                    constPHB * tmpVB
+            fluidPDFB[indices, 7] = fluidPDFB[indices, 5] + 1./2. * \
+                (fluidPDFB[indices, 1] - fluidPDFB[indices, 3]) - \
+                1./6. * constPHB * tmpVB
+            fluidPDFB[indices, 8] = fluidPDFB[indices, 6] - 1./2. * \
+                (fluidPDFB[indices, 1] - fluidPDFB[indices, 3]) - \
+                1./6. * constPHB * tmpVB
+            fluidRhoB[indices] = constPHB
+            #for fluid R
+            tmpVR = -1. + (fluidPDFR[indices, 0] + \
+                fluidPDFR[indices, 1] + fluidPDFR[indices, 3] + \
+                2. * (fluidPDFR[indices, 2] + fluidPDFR[indices, 5] + \
+                fluidPDFR[indices, 6])) / constPHR
+            fluidPDFR[indices, 4] = fluidPDFR[indices, 2] - 2. / 3. * \
+                    constPHR * tmpVR
+            fluidPDFR[indices, 7] = fluidPDFR[indices, 5] + 1./2. * \
+                (fluidPDFR[indices, 1] - fluidPDFR[indices, 3]) - \
+                1./6. * constPHR * tmpVR
+            fluidPDFR[indices, 8] = fluidPDFR[indices, 6] - 1./2. * \
+                (fluidPDFR[indices, 1] - fluidPDFR[indices, 3]) - \
+                1./6. * constPHR * tmpVR
+            fluidRhoR[indices] = constPHR
+
+"""
+Ghost nodes on the inlet boundary for the constant pressure condition
+"""
+@cuda.jit('void(int64, int64, int64, int64, int64[:], int64[:], \
+                float64[:], float64[:], float64[:, :], float64[:, :])')
+def ghostPointsConstPressureInletRK(totalNodes, nx, ny, xDim, fluidNodes, \
+                                neighboringNodes, fluidRhoR, fluidRhoB, fluidPDFR, \
+                                fluidPDFB):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+     
+    if (indices < totalNodes):
+        tmpIndex = fluidNodes[indices]
+        if tmpIndex >= (ny - 1) * nx and tmpIndex < ny * nx:
+            tmpStart = 8 * indices + 3
+            tmpH = neighboringNodes[tmpStart]
+            fluidPDFR[indices, 0] = fluidPDFR[tmpH, 0]
+            fluidPDFR[indices, 1] = fluidPDFR[tmpH, 1]
+            fluidPDFR[indices, 2] = fluidPDFR[tmpH, 2]
+            fluidPDFR[indices, 3] = fluidPDFR[tmpH, 3]
+            fluidPDFR[indices, 4] = fluidPDFR[tmpH, 4]
+            fluidPDFR[indices, 5] = fluidPDFR[tmpH, 5]
+            fluidPDFR[indices, 6] = fluidPDFR[tmpH, 6]
+            fluidPDFR[indices, 7] = fluidPDFR[tmpH, 7]
+            fluidPDFR[indices, 8] = fluidPDFR[tmpH, 8]
+            fluidRhoR[indices] = fluidRhoR[tmpH]
+                    
+            fluidPDFB[indices, 0] = fluidPDFB[tmpH, 0]
+            fluidPDFB[indices, 1] = fluidPDFB[tmpH, 1]
+            fluidPDFB[indices, 2] = fluidPDFB[tmpH, 2]
+            fluidPDFB[indices, 3] = fluidPDFB[tmpH, 3]
+            fluidPDFB[indices, 4] = fluidPDFB[tmpH, 4]
+            fluidPDFB[indices, 5] = fluidPDFB[tmpH, 5]
+            fluidPDFB[indices, 6] = fluidPDFB[tmpH, 6]
+            fluidPDFB[indices, 7] = fluidPDFB[tmpH, 7]
+            fluidPDFB[indices, 8] = fluidPDFB[tmpH, 8]
+            fluidRhoB[indices] = fluidRhoB[tmpH]
+    cuda.syncthreads()
+   
+"""
+Constant pressure boundary condition at the outlet of the domain
+"""
+@cuda.jit("void(int64, int64, int64, float64, float64, int64[:], \
+                float64[:], float64[:], float64[:, :], float64[:, :])")
+def calConstPressureLowerGPU(totalNodes, nx, xDim, constPLB, constPLR, fluidNodes, \
+                            fluidRhoB, fluidRhoR, fluidPDFB, fluidPDFR):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by *xDim + bx * bDimX + tx
+    
+#    if indices < totalNodes:
+    if indices < 2 * nx and indices >= nx:
+#        tmpIndex = fluidNodes[indices]
+#        if tmpIndex >= nx and tmpIndex < 2 * nx:
+            #for fluid B
+        tmpVB = 1. - 1./constPLB * (fluidPDFB[indices, 0] + fluidPDFB[indices, 1] + \
+                fluidPDFB[indices, 3] + 2. * (fluidPDFB[indices, 4] + \
+                fluidPDFB[indices, 7] + fluidPDFB[indices, 8]))
+        fluidPDFB[indices, 2] = fluidPDFB[indices, 4] + 2./3. * (constPLB * tmpVB)
+        fluidPDFB[indices, 5] = fluidPDFB[indices, 7] + 0.5 * (fluidPDFB[indices, 3] - \
+                 fluidPDFB[indices, 1]) + 1./6. * constPLB * tmpVB
+        fluidPDFB[indices, 6] = fluidPDFB[indices, 8] + 0.5 * (fluidPDFB[indices, 1] - \
+                 fluidPDFB[indices, 3]) + 1./6. * constPLB * tmpVB
+        fluidRhoB[indices] = constPLB
+        #for fluid R
+        tmpVR = 1. - 1./constPLR * (fluidPDFR[indices, 0] + fluidPDFR[indices, 1] + \
+                fluidPDFR[indices, 3] + 2. * (fluidPDFR[indices, 4] + \
+                fluidPDFR[indices, 7] + fluidPDFR[indices, 8]))
+        fluidPDFR[indices, 2] = fluidPDFR[indices, 4] + 2./3. * constPLR * tmpVR
+        fluidPDFR[indices, 5] = fluidPDFR[indices, 7] + 0.5 * (fluidPDFR[indices, 3] - \
+                 fluidPDFR[indices, 1]) + 1./6. * constPLR * tmpVR
+        fluidPDFR[indices, 6] = fluidPDFR[indices, 8] + 0.5 * (fluidPDFR[indices, 1] - \
+                 fluidPDFR[indices, 3]) + 1./6. * constPLR * tmpVR
+        fluidRhoR[indices] = constPLR
+    cuda.syncthreads()
+                     
+"""
+Ghost nodes on the lower boundary for the constant pressure condition
+"""
+@cuda.jit('void(int64, int64, int64, int64[:], int64[:], \
+                float64[:], float64[:], float64[:, :], float64[:, :])')
+def ghostPointsConstPressureLowerRK(totalNodes, nx, xDim, fluidNodes, \
+                                neighboringNodes, fluidRhoR, fluidRhoB, fluidPDFR, \
+                                fluidPDFB):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+     
+#    if (indices < totalNodes):\
+    if indices < nx:
+#        tmpIndex = fluidNodes[indices]
+#        if tmpIndex < nx:
+        tmpStart = 8 * indices + 1
+        tmpL = neighboringNodes[tmpStart]
+
+        fluidPDFR[indices, 0] = fluidPDFR[tmpL, 0]
+        fluidPDFR[indices, 1] = fluidPDFR[tmpL, 1]
+        fluidPDFR[indices, 2] = fluidPDFR[tmpL, 2]
+        fluidPDFR[indices, 3] = fluidPDFR[tmpL, 3]
+        fluidPDFR[indices, 4] = fluidPDFR[tmpL, 4]
+        fluidPDFR[indices, 5] = fluidPDFR[tmpL, 5]
+        fluidPDFR[indices, 6] = fluidPDFR[tmpL, 6]
+        fluidPDFR[indices, 7] = fluidPDFR[tmpL, 7]
+        fluidPDFR[indices, 8] = fluidPDFR[tmpL, 8]
+        fluidRhoR[indices] = fluidRhoR[tmpL]
+                
+        fluidPDFB[indices, 0] = fluidPDFB[tmpL, 0]
+        fluidPDFB[indices, 1] = fluidPDFB[tmpL, 1]
+        fluidPDFB[indices, 2] = fluidPDFB[tmpL, 2]
+        fluidPDFB[indices, 3] = fluidPDFB[tmpL, 3]
+        fluidPDFB[indices, 4] = fluidPDFB[tmpL, 4]
+        fluidPDFB[indices, 5] = fluidPDFB[tmpL, 5]
+        fluidPDFB[indices, 6] = fluidPDFB[tmpL, 6]
+        fluidPDFB[indices, 7] = fluidPDFB[tmpL, 7]
+        fluidPDFB[indices, 8] = fluidPDFB[tmpL, 8]
+        fluidRhoB[indices] = fluidRhoB[tmpL]
+    cuda.syncthreads()
+
+"""
+Constant pressure boundary condition on the inlet of the domain
+"""
+@cuda.jit("void(int64, int64, int64, int64, float64, float64, int64[:], \
+                float64[:, :], float64[:, :])")
+def calConstPressureHighGPU(totalNodes, nx, ny, xDim, constPHB, constPHR, fluidNodes, \
+                           fluidPDFB, fluidPDFR):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    
+    if indices < totalNodes:
+        tmpIndex = fluidNodes[indices]
+        if tmpIndex >= (ny - 1) * nx and tmpIndex < ny * nx:
+            #for fluid B
+            tmpVB = -1. + 1./constPHB * (fluidPDFB[indices, 0] + fluidPDFB[indices, 1] + \
+                    fluidPDFB[indices, 3] + 2. * (fluidPDFB[indices, 2] + \
+                    fluidPDFB[indices, 5] + fluidPDFB[indices, 6]))
+            fluidPDFB[indices, 4] = fluidPDFB[indices, 2] - 2./3. * constPHB * \
+                    tmpVB
+            fluidPDFB[indices, 7] = fluidPDFB[indices, 5] - 0.5 * (fluidPDFB[indices, 3] - \
+                     fluidPDFB[indices, 1]) - 1./6. * constPHB * tmpVB
+            fluidPDFB[indices, 8] = fluidPDFB[indices, 6] - 0.5 * (fluidPDFB[indices, 1] - \
+                     fluidPDFB[indices, 3]) - 1./6. * constPHB * tmpVB
+            #for fluid R
+            tmpVR = -1. + 1./constPHR * (fluidPDFR[indices, 0] + fluidPDFR[indices, 1] + \
+                    fluidPDFR[indices, 3] + 2. * (fluidPDFR[indices, 2] + \
+                    fluidPDFR[indices, 5] + fluidPDFR[indices, 6]))
+            fluidPDFR[indices, 4] = fluidPDFR[indices, 2] - 2./3. * constPHR * \
+                    tmpVR
+            fluidPDFR[indices, 7] = fluidPDFR[indices, 5] - 0.5 * (fluidPDFR[indices, 3] - \
+                     fluidPDFR[indices, 1]) - 1./6. * constPHR * tmpVR
+            fluidPDFR[indices, 8] = fluidPDFR[indices, 6] - 0.5 * (fluidPDFR[indices, 1] - \
+                     fluidPDFR[indices, 3]) - 1./6. * constPHR * tmpVR
+            
+
+"""
 Calculate the first collision part
 """
 @cuda.jit('void(int64, int64, float64, float64, float64, float64[:], float64[:], \
@@ -549,18 +1129,18 @@ def calRKCollision1GPU2DSRTNew(totalNodes, xDim, delta, tauR, tauB, unitEX, unit
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
+    
+    sharedEX = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedEY = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedCCR = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedCCB = cuda.shared.array(shape = (9,), dtype = float64)
+    sharedWeights = cuda.shared.array(shape = (9,), dtype = float64)
+    for i in range(9):
+        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
+        sharedCCR[i] = constantCR[i]; sharedCCB[i] = constantCB[i]
+        sharedWeights[i] = weightsCoeff[i]
 
-    if (indices < totalNodes):
-        sharedEX = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedEY = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedCCR = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedCCB = cuda.shared.array(shape = (9,), dtype = float64)
-        sharedWeights = cuda.shared.array(shape = (9,), dtype = float64)
-        for i in range(9):
-            sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
-            sharedCCR[i] = constantCR[i]; sharedCCB[i] = constantCB[i]
-            sharedWeights[i] = weightsCoeff[i]
-            
+    if (indices < totalNodes):            
         Phi = phiValue[indices]
         tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
                              (tauB - 0.5)))
@@ -585,11 +1165,12 @@ Calculate the second and third collisions
 @cuda.jit('void(int64, int64, float64, float64, float64, float64, \
                 int64[:], int64[:], float64[:], float64[:], float64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], float64[:], float64[:, :], \
-                float64[:, :], float64[:], float64[:])')
+                float64[:, :], float64[:], float64[:], float64[:, :])')
 def calRKCollision23GPUNew(totalNodes, xDim, betaCoeff, AkR, AkB, solidPhi, \
                         fluidNodes, neighboringNodes, constantB, weightsCoeff, \
                         unitEX, unitEY, schemeGradient, fluidRhoR, fluidRhoB, phiValue, \
-                        constantCR, constantCB, fluidPDFR, fluidPDFB, CGX, CGY):
+                        constantCR, constantCB, fluidPDFR, fluidPDFB, CGX, CGY, \
+                        fluidPDFTotal):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
@@ -637,30 +1218,25 @@ def calRKCollision23GPUNew(totalNodes, xDim, betaCoeff, AkR, AkB, solidPhi, \
         tmpSquareGradient = tmpGradientX * tmpGradientX + tmpGradientY * \
                             tmpGradientY
         tmpNormGradient = math.sqrt(tmpSquareGradient)
-        CGX[indices] = tmpGradientX; CGY[indices] = tmpSquareGradient
-        CGY[indices] = 0.
         #Calculate the re-coloring part
         tmpRhoSum = fluidRhoR[indices] + fluidRhoB[indices]
         tmpRhoMul = fluidRhoR[indices] * fluidRhoB[indices]
         tmpRhoSumSquare = tmpRhoSum * tmpRhoSum
         for i in range(9):
-            tmpSecondCollisionR = 0.; tmpSecondCollisionB = 0.
+            tmpSecondCollisionTotal = 0.
             if (tmpSquareGradient == 0.):
 #            CGY[indices] = tmpSquareGradient
 #            if (math.isnan(tmpPartCollision) == 1 or math.isinf(tmpPartCollision) == 1):
-                tmpSecondCollisionR = 0.; tmpSecondCollisionB = 0.
+                tmpSecondCollisionTotal = 0.
             else:
                 tmpPartCollision = sharedWeights[i] * ((sharedEX[i] * tmpGradientX + \
                                 sharedEY[i] * tmpGradientY) * (sharedEX[i] * tmpGradientX + \
                                 sharedEY[i] * tmpGradientY)) / tmpSquareGradient
-                tmpSecondCollisionR = AkR * 0.5 * tmpNormGradient * (tmpPartCollision - \
+                tmpSecondCollisionTotal = (AkR + AkB) * 0.5 * tmpNormGradient * (tmpPartCollision - \
                                     sharedCB[i])
-                tmpSecondCollisionB = AkB * 0.5 * tmpNormGradient * (tmpPartCollision - \
-                                    sharedCB[i])
-            fluidPDFR[indices, i] += tmpSecondCollisionR
-            fluidPDFB[indices, i] += tmpSecondCollisionB
-#            collisionR1[indices, i] += tmpSecondCollisionR #+ deviceCollisionR[indices, i]
-#            collisionB1[indices, i] += tmpSecondCollisionB #+ deviceCollisionR[indices, i]
+#                tmpSecondCollisionB = AkB * 0.5 * tmpNormGradient * (tmpPartCollision - \
+#                                    sharedCB[i])
+            fluidPDFTotal[indices, i] += tmpSecondCollisionTotal
 
         for i in range(9):
             tmpUnitSqrt = math.sqrt(sharedEX[i] * sharedEX[i] + sharedEY[i] * \
@@ -674,19 +1250,12 @@ def calRKCollision23GPUNew(totalNodes, xDim, betaCoeff, AkR, AkB, solidPhi, \
                         sharedEY[i]) * tmpNormGradient)
 #            if (math.isnan(cosTheta) == 1 or math.isinf(cosTheta) == 1):
 #                cosTheta = 0.
-#            tmpFeqRho = fluidRhoR[indices] * sharedConsCR[i] + fluidRhoB[indices] * \
-#                        sharedConsCB[i]
-            tmpFeqRho = fluidRhoR[indices] * sharedWeights[i] + fluidRhoB[indices] * \
-                        sharedWeights[i]
-            tmpSumPDF = fluidPDFR[indices, i] + fluidPDFB[indices, i]
-#            tmpSumPDF = collisionR1[indices, i] + collisionB1[indices, i]
-#            tmpSumPDF = localPostPerturbationR[i] + localPostPerturbationB[i]
             #re-coloring
-            fluidPDFR[indices, i] = fluidRhoR[indices]/tmpRhoSum * tmpSumPDF + \
-                            (betaCoeff * tmpRhoMul / tmpRhoSumSquare) * tmpFeqRho * \
+            fluidPDFR[indices, i] = fluidRhoR[indices]/tmpRhoSum * fluidPDFTotal[indices, i] + \
+                            (betaCoeff * tmpRhoMul / tmpRhoSumSquare) * sharedWeights[i] * \
                             cosTheta #+ collisionR1[indices, i] + fluidPDFR[indices, i]
-            fluidPDFB[indices, i] = fluidRhoB[indices]/tmpRhoSum * tmpSumPDF - \
-                            (betaCoeff * tmpRhoMul / tmpRhoSumSquare) * tmpFeqRho * \
+            fluidPDFB[indices, i] = fluidRhoB[indices]/tmpRhoSum * fluidPDFTotal[indices, i] - \
+                            (betaCoeff * tmpRhoMul / tmpRhoSumSquare) * sharedWeights[i] * \
                             cosTheta #+ collisionB1[indices, i] + fluidPDFB[indices, i]
     cuda.syncthreads()
     
@@ -698,11 +1267,11 @@ Calculate the first collision part
 """
 @cuda.jit('void(int64, int64, float64, float64, float64, float64, float64, float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], \
-                float64[:], float64[:], float64[:, :], float64[:, :], float64[:, :], \
+                float64[:], float64[:], float64[:, :], float64[:, :], \
                 float64[:, :], float64[:])')
 def calRKCollision1GPU2DMRTNew(totalNodes, xDim, delta, tauR, tauB, bodyFX, bodyFY, unitEX, unitEY, \
                          constantCR, constantCB, weightsCoeff, physicalVX, physicalVY, \
-                         fluidRhoR, fluidRhoB, phiValue, fluidPDFR, fluidPDFB, transformationM, \
+                         fluidRhoR, fluidRhoB, phiValue, fluidPDFTotal, transformationM, \
                          inverseTM, collisionS):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
@@ -717,10 +1286,11 @@ def calRKCollision1GPU2DMRTNew(totalNodes, xDim, delta, tauR, tauB, bodyFX, body
     
     sharedCS = cuda.local.array(shape = (9, ), dtype = float64)
     
-    localTmpEqR = cuda.local.array(shape = (9, ), dtype = float64)
-    localTmpEqB = cuda.local.array(shape = (9, ), dtype = float64)
-    localTmpfPDFR = cuda.local.array(shape = (9, ), dtype = float64)
-    localTmpfPDFB = cuda.local.array(shape = (9, ), dtype = float64)
+    localTmpEqTotal = cuda.local.array(shape = (9, ), dtype = float64)
+    localTmpfPDFTotal = cuda.local.array(shape = (9, ), dtype = float64)
+    localWeightF = cuda.local.array(shape = (9,), dtype = float64)
+    localWeightF[0] = 0; localWeightF[1:5] = 1./3.; localWeightF[5:] = 1./12.
+    
     for i in range(9):
         for j in range(9):
             sharedTM[i, j] = transformationM[i, j]
@@ -736,38 +1306,39 @@ def calRKCollision1GPU2DMRTNew(totalNodes, xDim, delta, tauR, tauB, bodyFX, body
         Phi = phiValue[indices]
         tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
                              (tauB - 0.5)))
+#        tmpTau = 1.0; delta = 0.98
+#        if (Phi > delta):
+#            tmpTau = tauR
+#        elif (Phi > 0 and Phi <= delta):
+#            tmpTau = calTau1AtLocation(Phi, delta, tauR, tauB)
+#        elif (Phi <= 0 and Phi >= -delta):
+#            tmpTau = calTau2AtLocation(Phi, delta, tauR, tauB)
+#        elif (Phi < -delta):
+#            tmpTau = tauB
         sharedCS[7] = 1./ tmpTau; sharedCS[8] = 1./ tmpTau
-        tmpRhoR = fluidRhoR[indices]; tmpRhoB = fluidRhoB[indices]
         tmpVX = physicalVX[indices]; tmpVY = physicalVY[indices]
+        tmpRhoTotal = fluidRhoB[indices] + fluidRhoR[indices]
         for i in range(9):
             tmpEX = unitEX[i]
             tmpEY = unitEY[i]
-            localTmpEqR[i] = calEquilibriumRK2D(tmpRhoR, weightsCoeff[i], \
-                            tmpEX, tmpEY, tmpVX, tmpVY)
-            localTmpEqB[i] = calEquilibriumRK2D(tmpRhoB, weightsCoeff[i], \
+            localTmpEqTotal[i] = calEquilibriumRK2D(tmpRhoTotal, weightsCoeff[i], \
                             tmpEX, tmpEY, tmpVX, tmpVY)
         for i in range(9):
-            tmpFR = 0.; tmpFB = 0.; tmpFREQ = 0.; tmpFBEQ = 0.
+            tmpFTotal = 0.; tmpFTotalEQ = 0.
             for j in range(9):
-                tmpFR += sharedTM[i, j] * fluidPDFR[indices, j]
-                tmpFB += sharedTM[i, j] * fluidPDFB[indices, j]
-                tmpFREQ += sharedTM[i, j] * localTmpEqR[j]
-                tmpFBEQ += sharedTM[i, j] * localTmpEqB[j]
-            localTmpfPDFR[i] = tmpFR - tmpFREQ; localTmpfPDFB[i] = tmpFB - tmpFBEQ
+                tmpFTotal += sharedTM[i, j] * fluidPDFTotal[indices, j]
+                tmpFTotalEQ += sharedTM[i, j] * localTmpEqTotal[j]
+            localTmpfPDFTotal[i] = tmpFTotal - tmpFTotalEQ
         
         for i in range(9):
-            localTmpfPDFR[i] = localTmpfPDFR[i] * sharedCS[i]
-            localTmpfPDFB[i] = localTmpfPDFB[i] * sharedCS[i]
+            localTmpfPDFTotal[i] = localTmpfPDFTotal[i] * sharedCS[i]
         
         for i in range(9):
-            tmpFR = 0.; tmpFB = 0.;
+            tmpFTotal = 0.
             for j in range(9):
-                tmpFR += sharedIM[i, j] * localTmpfPDFR[j]
-                tmpFB += sharedIM[i, j] * localTmpfPDFB[j]
-            fluidPDFR[indices, i] = -tmpFR + 3. * weightsCoeff[i] * (unitEX[i] * \
-                        bodyFX + unitEY[i] * bodyFY) + fluidPDFR[indices, i]
-            fluidPDFB[indices, i] = -tmpFB + 3. * weightsCoeff[i] * (unitEX[i] * \
-                        bodyFX + unitEY[i] * bodyFY) + fluidPDFB[indices, i]
+                tmpFTotal += sharedIM[i, j] * localTmpfPDFTotal[j]
+            fluidPDFTotal[indices, i] = -tmpFTotal + localWeightF[i] * (unitEX[i] * \
+                        bodyFX + unitEY[i] * bodyFY) + fluidPDFTotal[indices, i]
     cuda.syncthreads()
 
 """
@@ -782,6 +1353,7 @@ def calPhaseFieldPhi(totalNodes, xDim, fluidRhoR, fluidRhoB, phiValue):
     if (indices < totalNodes):
         phiValue[indices] = (fluidRhoR[indices] - fluidRhoB[indices]) / (fluidRhoR[indices] + \
                 fluidRhoB[indices])
+    cuda.syncthreads()
 
 """
 Outlet boundary condition for order parameter: Phi, so the interface can leave 
@@ -801,7 +1373,7 @@ def calNeumannPhiOutlet(totalNodes, xDim, nx, fluidNodes, neighboringNodes, phiV
             tmpLower = neighboringNodes[tmpStart + 3]
             phiValue[indices] = phiValue[tmpUpper]
             phiValue[tmpLower] = phiValue[tmpUpper]
-            
+    cuda.syncthreads()
                             
 """
 Add the modified periodic boundary condition for flow having body force
@@ -979,6 +1551,7 @@ def calRecoloringProcess(totalNodes, xDim, betaValue, weightsCoeff, fluidRhoR, \
             fluidPDFB[indices, i] = fluidRhoB[indices] / totalRho * tmpTotalPDF - \
                 betaValue * fluidRhoR[indices] * fluidRhoB[indices] / totalRho * \
                 sharedWeights[i] * costheta + fluidPDFB[indices, i]
+    cuda.syncthreads()
                 
 """
 Calculate the color value rho^{N} value on the solid phase
@@ -1005,7 +1578,7 @@ def calColorValueOnSolid(totalSolidWetting, xDim, neighboringWettingSolid, \
                 tmpSumCoeff += weightsCoeff[tmpIndices]
         colorValueSolid[indices] = tmpSum / tmpSumCoeff
     cuda.syncthreads()
-
+        
 @cuda.jit('void(int64, int64, int64, int64[:], int64[:], float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:], float64[:])')
 def calRKInitialGradient(totalNodes, xDim, numColorSolid, \
@@ -1015,14 +1588,14 @@ def calRKInitialGradient(totalNodes, xDim, numColorSolid, \
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
-
+    
 #    sharedEX = cuda.shared.array((9,), dtype = float64)
 #    sharedEY = cuda.shared.array((9,), dtype = float64)
 #    sharedWeights = cuda.shared.array((9,), dtype = float64)
 #    for i in range(9):
 #        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
 #        sharedWeights[i] = weightsCoeff[i]
-
+    
     if (indices < totalNodes):
         tmpGradientX = 0.; tmpGradientY = 0.
         tmpStart = 8 * indices; tmpIndex = 0
@@ -1057,7 +1630,7 @@ def calRKInitialGradient(totalNodes, xDim, numColorSolid, \
 #        unitInitialNx[indices] = tmpGradientX / tmpGradientNorm
 #        unitInitialNy[indices] = tmpGradientY / tmpGradientNorm
     cuda.syncthreads()
-
+        
 """
 Update the color gradient value on the nodes neighboring to the solid
 """
@@ -1075,7 +1648,7 @@ def updateColorGradientOnWetting(totalFluidWettingNodes, xDim, cosTheta, sinThet
         tmpN1Y = unitVectorNsy[indices] * cosTheta + unitVectorNsx[indices] * sinTheta
         tmpN2X = unitVectorNsx[indices] * cosTheta + unitVectorNsy[indices] * sinTheta
         tmpN2Y = unitVectorNsy[indices] * cosTheta - unitVectorNsx[indices] * sinTheta
-
+        
         #Unit vector of gradient on fluid node
         tmpLoc = fluidNodesWetting[indices]
         tmpGradientNorm = math.sqrt(gradientX[tmpLoc] * gradientX[tmpLoc] + \
@@ -1104,7 +1677,7 @@ def updateColorGradientOnWetting(totalFluidWettingNodes, xDim, cosTheta, sinThet
         gradientX[tmpLoc] = tmpGradientNorm * tmpModifiedNX
         gradientY[tmpLoc] = tmpGradientNorm * tmpModifiedNY
     cuda.syncthreads()
-
+        
 """
 Add the body force (including surface tension)
 """
@@ -1160,7 +1733,7 @@ def calForceTermInColorGradient2D(totalNodes, xDim, surfaceTension, neighboringN
         forceX[indices] = 0.5 * surfaceTension * KValue[indices] * gradientX[indices]
         forceY[indices] = 0.5 * surfaceTension * KValue[indices] * gradientY[indices]
     cuda.syncthreads()
-
+        
 """
 Calculate the distribution function after adding the force term (SRT)
 """
@@ -1197,9 +1770,11 @@ def calPerturbationFromForce2D(totalNodes, xDim, optionF, tauR, tauB, deltaValue
                 tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
                 tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
                 tmpTau = 3. * tmpMiu + 0.5
+
         tmpFX = forceX[indices]; tmpFY = forceY[indices]
+
         for i in range(9):
-#            term1 = sharedEX[i] * forceX[indices] * 3.
+#            term1 = sharedEX[i] * forceX[indices] * 3. 
 #            term2 = sharedEY[i] * forceY[indices] * 3.
 #            term3 = (sharedEX[i] * sharedEX[i] - 1./3.) * physicalVX[indices] * \
 #                    forceX[indices] * 9.
@@ -1232,14 +1807,14 @@ def calRKCollision1TotalGPU2DSRTM(totalNodes, xDim, optionF, tauR, tauB, deltaVa
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
-
+    
 #    sharedEX = cuda.shared.array(shape = (9,), dtype = float64)
 #    sharedEY = cuda.shared.array(shape = (9,), dtype = float64)
 #    sharedWeights = cuda.shared.array(shape = (9,), dtype = float64)
 #    for i in range(9):
 #        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
 #        sharedWeights[i] = weightsCoeff[i]
-
+        
     if (indices < totalNodes):
         Phi = ColorValue[indices]; tmpTau = 1.
         if Phi > deltaValue:
@@ -1268,10 +1843,11 @@ def calRKCollision1TotalGPU2DSRTM(totalNodes, xDim, optionF, tauR, tauB, deltaVa
             tmpEquilibriumB = calEquilibriumRK2D(tmpRhoB, weightsCoeff[i], \
                             unitEX[i], unitEY[i], tmpVX, tmpVY)
             tmpEquilibriumTotal = tmpEquilibriumR + tmpEquilibriumB
+#            fluidEql[indices, i] = tmpEquilibriumTotal
             fluidPDFTotal[indices, i] = -1./tmpTau * (fluidPDFTotal[indices, i] - \
                            tmpEquilibriumTotal) + fluidPDFTotal[indices, i]
     cuda.syncthreads()
-
+            
 """
 #Recoloring step for two components in modified method
 """
@@ -1284,14 +1860,14 @@ def calRecoloringProcessM(totalNodes, xDim, betaValue, weightsCoeff, fluidRhoR, 
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
-
+    
 #    sharedEX = cuda.shared.array((9,), dtype = float64)
 #    sharedEY = cuda.shared.array((9,), dtype = float64)
 #    sharedWeights = cuda.shared.array((9,), dtype = float64)
 #    for i in range(9):
 #        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
 #        sharedWeights[i] = weightsCoeff[i]
-
+    
     if indices < totalNodes:
         tmpGradientNorm = math.sqrt(gradientX[indices] * gradientX[indices] + \
                                     gradientY[indices] * gradientY[indices])
@@ -1314,31 +1890,30 @@ def calRecoloringProcessM(totalNodes, xDim, betaValue, weightsCoeff, fluidRhoR, 
 #                sharedWeights[i] * costheta * tmpUnitNorm
 #            fluidPDFB[indices, i] = fluidRhoB[indices] / totalRho * tmpTotalPDF - \
 #                betaValue * fluidRhoR[indices] * fluidRhoB[indices] / totalRho * \
-#                sharedWeights[i] * costheta * tmpUnitNorm
+#                sharedWeights[i] * costheta * tmpUnitNorm   
             fluidPDFR[indices, i] = fluidRhoR[indices] / totalRho * tmpTotalPDF + \
                 betaValue * fluidRhoR[indices] * fluidRhoB[indices] / totalRho * \
                 weightsCoeff[i] * costheta * tmpUnitNorm
             fluidPDFB[indices, i] = fluidRhoB[indices] / totalRho * tmpTotalPDF - \
                 betaValue * fluidRhoR[indices] * fluidRhoB[indices] / totalRho * \
-                weightsCoeff[i] * costheta * tmpUnitNorm
+                weightsCoeff[i] * costheta * tmpUnitNorm     
     cuda.syncthreads()
 
 """
 Calculate the macro-scale velocity
 """
-@cuda.jit('void(int64, int64, float64[:, :], float64[:], float64[:], \
+@cuda.jit('void(int64, int64,int64, int64, int64[:], float64[:, :], float64[:], float64[:], \
                 float64[:], float64[:], float64[:], float64[:])')
-def calPhysicalVelocityRKGPU2DM(totalNodes, xDim, fluidPDFTotal, fluidRhoR, \
+def calPhysicalVelocityRKGPU2DVNew(totalNodes, nx, ny, xDim, fluidNodes, fluidPDFTotal, fluidRhoR, \
                                fluidRhoB, physicalVX, physicalVY, forceX, forceY):
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
-
+    
     if (indices < totalNodes):
         tmpLoc = fluidNodes[indices]
         if tmpLoc < (ny - 2) * nx:
-            tmpVX = 0.;
-            tmpVY = 0.
+            tmpVX = 0.; tmpVY = 0.
             tmpRhoSum = fluidRhoB[indices] + fluidRhoR[indices]
             tmpVX = fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3] + \
                     fluidPDFTotal[indices, 5] - fluidPDFTotal[indices, 6] - \
@@ -1351,7 +1926,8 @@ def calPhysicalVelocityRKGPU2DM(totalNodes, xDim, fluidPDFTotal, fluidRhoR, \
                     forceY[indices]
             physicalVY[indices] = tmpVY / tmpRhoSum
     cuda.syncthreads()
-
+    
+    
 """
 Collision process 1 with total distribution function in modified method
 """
@@ -1366,18 +1942,18 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, deltaVa
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
-
+    
 #    sharedEX = cuda.shared.array(shape = (9,), dtype = float64)
 #    sharedEY = cuda.shared.array(shape = (9,), dtype = float64)
 #    sharedWeights = cuda.shared.array(shape = (9,), dtype = float64)
-#
+#    
 #    sharedTM = cuda.shared.array(shape = (9, 9), dtype = float64)
 #    sharedIM = cuda.shared.array(shape = (9, 9), dtype = float64)
-
+    
     localCollisionS = cuda.shared.array(shape = (9,), dtype = float64)
     localSingleCollision = cuda.local.array(shape = (9,), dtype = float64)
     localTransformation = cuda.local.array(shape = (9,), dtype = float64)
-
+    
 #    for i in range(9):
 #        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
 #        sharedWeights[i] = weightsCoeff[i]
@@ -1386,7 +1962,7 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, deltaVa
 #            sharedIM[i, j] = inverseTM[i, j]
     for i in range(9):
         localCollisionS[i] = collisionS[i]
-
+        
     if (indices < totalNodes):
         Phi = ColorValue[indices]; tmpTau = 1.
         if Phi > deltaValue:
@@ -1404,7 +1980,7 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, deltaVa
                 tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
                 tmpTau = 3. * tmpMiu + 0.5
         localCollisionS[7] = 1./tmpTau; localCollisionS[8] = 1./tmpTau
-
+        
         tmpRhoR = fluidRhoR[indices]; tmpRhoB = fluidRhoB[indices]
         tmpVX = physicalVX[indices]; tmpVY = physicalVY[indices]
         for i in range(9):
@@ -1429,18 +2005,18 @@ def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, deltaVa
 #                tmpSum += sharedTM[i, j] * localSingleCollision[j]
                 tmpSum += transformationM[i, j] * localSingleCollision[j]
             localTransformation[i] = tmpSum
-
+        
         for i in range(9):
             localTransformation[i] = localTransformation[i] * localCollisionS[i]
-
+            
         for i in range(9):
             tmpSum = 0.
             for j in range(9):
 #                tmpSum += sharedIM[i, j] * localTransformation[j]
                 tmpSum += inverseTM[i, j] * localTransformation[j]
-            fluidPDFTotal[indices, i] = -tmpSum + fluidPDFTotal[indices, i]
+            fluidPDFTotal[indices, i] = -tmpSum + fluidPDFTotal[indices, i]        
     cuda.syncthreads()
-
+    
 """
 Calculate the distribution function after adding the force term (MRT)
 """
@@ -1461,7 +2037,7 @@ def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, deltaVa
 #    sharedWeights = cuda.shared.array((9,), dtype = float64)
 #    sharedTM = cuda.shared.array(shape = (9, 9), dtype = float64)
 #    sharedIM = cuda.shared.array(shape = (9, 9), dtype = float64)
-
+    
     localCollisionS = cuda.shared.array(shape = (9,), dtype = float64)
     localSource = cuda.local.array(shape = (9,), dtype = float64)
     localTransform = cuda.local.array(shape = (9,), dtype = float64)
@@ -1493,7 +2069,7 @@ def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, deltaVa
         localCollisionS[7] = 1. - 0.5 * 1./tmpTau; localCollisionS[8] = 1. - 0.5 * 1./tmpTau
         tmpFX = forceX[indices]; tmpFY = forceY[indices]
         for i in range(9):
-#            term1 = sharedEX[i] * forceX[indices] * 3.
+#            term1 = sharedEX[i] * forceX[indices] * 3. 
 #            term2 = sharedEY[i] * forceY[indices] * 3.
 #            term3 = (sharedEX[i] * sharedEX[i] - 1./3.) * physicalVX[indices] * \
 #                    forceX[indices] * 9.
@@ -1505,7 +2081,7 @@ def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, deltaVa
 #                    forceY[indices] * 9.
 #            sourceTerm = sharedWeights[i] * (term1 + \
 #                        term2 + term3 + term4 + term5 + term6)
-            term1 = unitEX[i] * forceX[indices] * 3.
+            term1 = unitEX[i] * forceX[indices] * 3. 
             term2 = unitEY[i] * forceY[indices] * 3.
             term3 = (unitEX[i] * unitEX[i] - 1./3.) * physicalVX[indices] * \
                     forceX[indices] * 9.
@@ -1525,17 +2101,202 @@ def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, deltaVa
 #                tmpSum += sharedTM[i, j] * localSource[j]
                 tmpSum += transformationM[i, j] * localSource[j]
             localTransform[i] = tmpSum
-
+        
         for i in range(9):
             localTransform[i] = localCollisionS[i] * localTransform[i]
-
+            
         for i in range(9):
             tmpSum = 0.
             for j in range(9):
 #                tmpSum += sharedIM[i, j] * localTransform[j]
                 tmpSum += inverseTM[i, j] * localTransform[j]
             fluidTotalPDF[indices, i] = fluidTotalPDF[indices, i] + tmpSum
-    cuda.syncthreads()
+    cuda.syncthreads()  
+    
+#"""
+#Collision process 1 with total distribution function in modified method
+#"""
+#@cuda.jit('void(int64, int64, int64, float64, float64, float64, float64[:], float64[:], \
+#                float64[:], float64[:], float64[:], float64[:], \
+#                float64[:], float64[:], float64[:, :], float64[:, :], float64[:, :], \
+#                float64[:])')
+#def calRKCollision1TotalGPU2DMRTM(totalNodes, xDim, optionF, tauR, tauB, deltaValue, \
+#                         unitEX, unitEY, weightsCoeff, physicalVX, physicalVY, \
+#                         fluidRhoR, fluidRhoB, ColorValue, fluidPDFTotal, transformationM, \
+#                         inverseTM, collisionS):
+#    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+#    by = cuda.blockIdx.y
+#    indices = by * xDim + bx * bDimX + tx
+#    
+##    sharedEX = cuda.shared.array(shape = (9,), dtype = float64)
+##    sharedEY = cuda.shared.array(shape = (9,), dtype = float64)
+##    sharedWeights = cuda.shared.array(shape = (9,), dtype = float64)
+##    
+##    sharedTM = cuda.shared.array(shape = (9, 9), dtype = float64)
+##    sharedIM = cuda.shared.array(shape = (9, 9), dtype = float64)
+#    
+#    localCollisionS = cuda.shared.array(shape = (9,), dtype = float64)
+#    localSingleCollision = cuda.local.array(shape = (9,), dtype = float64)
+#    localTransformation = cuda.local.array(shape = (9,), dtype = float64)
+#    
+##    for i in range(9):
+##        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
+##        sharedWeights[i] = weightsCoeff[i]
+##        for j in range(9):
+##            sharedTM[i, j] = transformationM[i, j]
+##            sharedIM[i, j] = inverseTM[i, j]
+#    for i in range(9):
+#        localCollisionS[i] = collisionS[i]
+#        
+#    if (indices < totalNodes):
+#        Phi = ColorValue[indices]; tmpTau = 1.
+##        if Phi > deltaValue:
+##            tmpTau = tauR
+##        elif Phi < -deltaValue:
+##            tmpTau = tauB
+##        elif math.fabs(Phi) <= deltaValue:
+#        if optionF == 1:
+#            tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
+#                                 (tauB - 0.5)))
+#        elif optionF == 2:
+#            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+#            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+#            tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
+#            tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
+#            tmpTau = 3. * tmpMiu + 0.5
+#        localCollisionS[7] = 1./tmpTau; localCollisionS[8] = 1./tmpTau
+#        
+#        tmpRhoR = fluidRhoR[indices]; tmpRhoB = fluidRhoB[indices]
+#        tmpVX = physicalVX[indices]; tmpVY = physicalVY[indices]
+#        for i in range(9):
+##            tmpEquilibriumR = calEquilibriumRK2D(tmpRhoR, sharedWeights[i], \
+##                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
+##            tmpEquilibriumB = calEquilibriumRK2D(tmpRhoB, sharedWeights[i], \
+##                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
+#            tmpEquilibriumR = calEquilibriumRK2D(tmpRhoR, weightsCoeff[i], \
+#                            unitEX[i], unitEY[i], tmpVX, tmpVY)
+#            tmpEquilibriumB = calEquilibriumRK2D(tmpRhoB, weightsCoeff[i], \
+#                            unitEX[i], unitEY[i], tmpVX, tmpVY)
+##            tmpEquilibriumR = calEquilibriumRK2DOriginal(tmpRhoR, constCR[i], sharedWeights[i], \
+##                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
+##            tmpEquilibriumB = calEquilibriumRK2DOriginal(tmpRhoB, constCB[i], sharedWeights[i], \
+##                            sharedEX[i], sharedEY[i], tmpVX, tmpVY)
+#            tmpEquilibriumTotal = tmpEquilibriumR + tmpEquilibriumB
+#            localSingleCollision[i] = (fluidPDFTotal[indices, i] - tmpEquilibriumTotal)
+#        #start MRT part
+#        for i in range(9):
+#            tmpSum = 0.
+#            for j in range(9):
+##                tmpSum += sharedTM[i, j] * localSingleCollision[j]
+#                tmpSum += transformationM[i, j] * localSingleCollision[j]
+#            localTransformation[i] = tmpSum
+#        
+#        for i in range(9):
+#            localTransformation[i] = localTransformation[i] * localCollisionS[i]
+#            
+#        for i in range(9):
+#            tmpSum = 0.
+#            for j in range(9):
+##                tmpSum += sharedIM[i, j] * localTransformation[j]
+#                tmpSum += inverseTM[i, j] * localTransformation[j]
+#            fluidPDFTotal[indices, i] = -tmpSum + fluidPDFTotal[indices, i]        
+#    cuda.syncthreads()
+#    
+#"""
+#Calculate the distribution function after adding the force term (MRT)
+#"""
+#@cuda.jit('void(int64, int64, int64, float64, float64, float64, float64[:], float64[:], float64[:], \
+#                float64[:], float64[:], float64[:], float64[:], float64[:], \
+#                float64[:, :], float64[:, :], float64[:, :], float64[:], float64[:], \
+#                float64[:])')
+#def calPerturbationFromForce2DMRT(totalNodes, xDim, optionF, tauR, tauB, deltaValue, \
+#                               weightsCoeff, unitEX, unitEY, physicalVX, physicalVY, \
+#                               forceX, forceY, colorValue, fluidTotalPDF, transformationM, \
+#                               inverseTM, collisionS, fluidRhoR, fluidRhoB):
+#    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+#    by = cuda.blockIdx.y
+#    indices = by * xDim + bx * bDimX + tx
+#
+##    sharedEX = cuda.shared.array((9,), dtype = float64)
+##    sharedEY = cuda.shared.array((9,), dtype = float64)
+##    sharedWeights = cuda.shared.array((9,), dtype = float64)
+##    sharedTM = cuda.shared.array(shape = (9, 9), dtype = float64)
+##    sharedIM = cuda.shared.array(shape = (9, 9), dtype = float64)
+#    
+#    localCollisionS = cuda.shared.array(shape = (9,), dtype = float64)
+#    localSource = cuda.local.array(shape = (9,), dtype = float64)
+#    localTransform = cuda.local.array(shape = (9,), dtype = float64)
+##    for i in range(9):
+##        sharedEX[i] = unitEX[i]; sharedEY[i] = unitEY[i]
+##        sharedWeights[i] = weightsCoeff[i]
+##        for j in range(9):
+##            sharedTM[i, j] = transformationM[i, j]
+##            sharedIM[i, j] = inverseTM[i, j]
+#    for i in range(9):
+#        localCollisionS[i] = 1. - 0.5 * collisionS[i]
+#    if indices < totalNodes:
+#        Phi = colorValue[indices]; tmpTau = 1.
+##        if Phi > deltaValue:
+##            tmpTau = tauR
+##        elif Phi < -deltaValue:
+##            tmpTau = tauB
+##        elif math.fabs(Phi) <= deltaValue:
+#        if optionF == 1:
+#            tmpTau = 0.5 + 1. / ((1. + Phi)/(2. * (tauR - 0.5)) + (1. - Phi) / (2. * \
+#                                 (tauB - 0.5)))
+#        elif optionF == 2:
+#            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+#            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+#            tmpMiuR = 3./(tauR - 0.5); tmpMiuB = 3./(tauB - 0.5)
+#            tmpMiu = 1./(ratioR * tmpMiuR + ratioB * tmpMiuB)
+#            tmpTau = 3. * tmpMiu + 0.5
+#
+#        localCollisionS[7] = 1. - 0.5 * 1./tmpTau; localCollisionS[8] = 1. - 0.5 * 1./tmpTau
+##        if (fluidRhoR[indices] > 0.98):
+#        for i in range(9):
+##            term1 = sharedEX[i] * forceX[indices] * 3. 
+##            term2 = sharedEY[i] * forceY[indices] * 3.
+##            term3 = (sharedEX[i] * sharedEX[i] - 1./3.) * physicalVX[indices] * \
+##                    forceX[indices] * 9.
+##            term4 = sharedEX[i] * sharedEY[i] * physicalVY[indices] * forceX[indices] * \
+##                    9.
+##            term5 = sharedEY[i] * sharedEX[i] * physicalVX[indices] * forceY[indices] * \
+##                    9.
+##            term6 = (sharedEY[i] * sharedEY[i] - 1./3.) * physicalVY[indices] * \
+##                    forceY[indices] * 9.
+##            sourceTerm = sharedWeights[i] * (term1 + \
+##                        term2 + term3 + term4 + term5 + term6)
+#            term1 = unitEX[i] * forceX[indices] * 3. 
+#            term2 = unitEY[i] * forceY[indices] * 3.
+#            term3 = (unitEX[i] * unitEX[i] - 1./3.) * physicalVX[indices] * \
+#                    forceX[indices] * 9.
+#            term4 = unitEX[i] * unitEY[i] * physicalVY[indices] * forceX[indices] * \
+#                    9.
+#            term5 = unitEY[i] * unitEX[i] * physicalVX[indices] * forceY[indices] * \
+#                    9.
+#            term6 = (unitEY[i] * unitEY[i] - 1./3.) * physicalVY[indices] * \
+#                    forceY[indices] * 9.
+#            sourceTerm = weightsCoeff[i] * (term1 + \
+#                        term2 + term3 + term4 + term5 + term6)
+#            localSource[i] = sourceTerm
+#        #Start MRT part
+#        for i in range(9):
+#            tmpSum = 0.
+#            for j in range(9):
+##                tmpSum += sharedTM[i, j] * localSource[j]
+#                tmpSum += transformationM[i, j] * localSource[j]
+#            localTransform[i] = tmpSum
+#        
+#        for i in range(9):
+#            localTransform[i] = localCollisionS[i] * localTransform[i]
+#            
+#        for i in range(9):
+#            tmpSum = 0.
+#            for j in range(9):
+##                tmpSum += sharedIM[i, j] * localTransform[j]
+#                tmpSum += inverseTM[i, j] * localTransform[j]
+#            fluidTotalPDF[indices, i] = fluidTotalPDF[indices, i] + tmpSum
+#    cuda.syncthreads()  
 
 """
 Calculate Von Neumann boundary condition with Zou-He method, but no flow for the 
@@ -1550,7 +2311,7 @@ def constantVelocityZHBoundaryHigherNewRK(totalNodes, nx, ny, xDim, \
     tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
-
+     
 #    if (indices < totalNodes - nx and indices >= totalNodes - 2 * nx):
     if indices < totalNodes:
         tmpStart = 8 * indices
@@ -1568,16 +2329,97 @@ def constantVelocityZHBoundaryHigherNewRK(totalNodes, nx, ny, xDim, \
             fluidPDFR[indices, 8] = fluidPDFR[indices, 6] - \
                     (fluidPDFR[indices, 1] - fluidPDFR[indices, 3]) / 2. - \
                     1./6. * fluidRhoR[indices] * specificVYR
+#                    
+#            #for retreating fluid
+#            tmpUpper = neighboringNodes[tmpStart + 1]
+#            fluidPDFB[indices, 4] = fluidPDFB[tmpUpper, 2]
+#            tmpFor7 = neighboringNodes[tmpUpper * 8]
+#            tmpFor8 = neighboringNodes[tmpUpper * 8 + 2]
+#            if tmpFor7 >= 0:
+#                fluidPDFB[indices, 7] = fluidPDFB[tmpFor7, 5]
+#            if tmpFor8 >= 0:
+#                fluidPDFB[indices, 8] = fluidPDFB[tmpFor8, 6]
 
-            #for retreating fluid
-            tmpUpper = neighboringNodes[tmpStart + 1]
-            fluidPDFB[indices, 4] = fluidPDFB[tmpUpper, 2]
-            tmpFor7 = neighboringNodes[tmpUpper * 8]
-            tmpFor8 = neighboringNodes[tmpUpper * 8 + 2]
-            if tmpFor7 >= 0:
-                fluidPDFB[indices, 7] = fluidPDFB[tmpFor7, 5]
-            if tmpFor8 >= 0:
-                fluidPDFB[indices, 8] = fluidPDFB[tmpFor8, 6]
+    cuda.syncthreads()
+    
+@cuda.jit('void(int64, int64, int64, int64, float64, int64[:], \
+                int64[:], float64[:], float64[:], float64[:, :], float64[:, :], \
+                float64[:, :], float64[:])')
+def constantTotalVelocityInlet(totalNodes, nx, ny, xDim, \
+                                        specificVY, fluidNodes, \
+                                        neighboringNodes, fluidRhoR, \
+                                        fluidRhoB, fluidPDFR, fluidPDFB, fluidPDFTotal, 
+                                        physicalVY):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+     
+#    if (indices < totalNodes - nx and indices >= totalNodes - 2 * nx):
+    if indices < totalNodes:
+        tmpStart = 8 * indices
+        tmpIndex = fluidNodes[indices]
+        if (tmpIndex < (ny - 1) * nx and tmpIndex >= (ny - 2) * nx):
+            tmpTotalRho = (fluidPDFTotal[indices, 0] + fluidPDFTotal[indices, 1] + \
+                    fluidPDFTotal[indices, 3] + 2. * (fluidPDFTotal[indices, 2] + \
+                    fluidPDFTotal[indices, 5] + fluidPDFTotal[indices, 6])) / \
+                    (1. + specificVY)
+#            fluidPDFTotal[indices, 4] = fluidPDFTotal[indices, 2] - 2./3. * \
+#                    tmpTotalRho * specificVY
+#            fluidPDFTotal[indices, 7] = fluidPDFTotal[indices, 5] + \
+#                    (fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3]) / 2. - \
+#                    1./6. * tmpTotalRho * specificVY
+#            fluidPDFTotal[indices, 8] = fluidPDFTotal[indices, 6] - \
+#                    (fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3]) / 2. - \
+#                    1./6. * tmpTotalRho * specificVY
+            tmpEq2 = tmpTotalRho * 1./9. * (1. + 3. * (1. * specificVY) + 4.5 * (0. + \
+                    1. * specificVY) * (0. + 1. * specificVY) - 1.5 * (specificVY * \
+                    specificVY))
+            tmpEq4 = tmpTotalRho * 1./9. * (1. + 3. * (-1. * specificVY) + 4.5 * (0. + \
+                    (-1.) * specificVY) * (0. + (-1.) * specificVY) - 1.5 * (specificVY * \
+                    specificVY))
+            fluidPDFTotal[indices, 4] = tmpEq4 + (fluidPDFTotal[indices, 2] - tmpEq2)
+            
+            tmpEq5 = tmpTotalRho * 1./36. * (1. + 3. * (1. * specificVY + 1. * 0.) + \
+                    4.5 * (1. * specificVY + 1. * 0.) * (1. * specificVY + 1. * 0.) - \
+                    1.5 * (specificVY * specificVY))
+            tmpEq7 = tmpTotalRho * 1./36. * (1. + 3. * ((-1.) * specificVY + (-1.) * \
+                    0.) + 4.5 * ((-1.) * specificVY + (-1.) * 0.) * ((-1.) * specificVY + \
+                    (-1.) * 0.) - 1.5 * (specificVY * specificVY))
+            fluidPDFTotal[indices, 7] = tmpEq7 + (fluidPDFTotal[indices, 5] - tmpEq5)
+            
+            tmpEq6 = tmpTotalRho * 1./36. * (1. + 3. * ((1.) * specificVY + (-1.) * 0.) + \
+                    4.5 * ((1.) * specificVY + (-1.) * 0.) * (1. * specificVY + \
+                    (-1.) * 0.) - 1.5 * (specificVY * specificVY))
+            tmpEq8 = tmpTotalRho * 1./36. * (1. + 3. * ((-1.) * specificVY + (1.) * 0.) + \
+                    4.5 * ((-1.) * specificVY + 1. * 0.) * ((-1.) * specificVY + 1. * 0.) - \
+                    1.5 * (specificVY * specificVY))
+            fluidPDFTotal[indices, 8] = tmpEq8 + (fluidPDFTotal[indices, 6] - tmpEq6)
+            
+            #for fluid R
+            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidRhoR[indices] = ratioR * tmpTotalRho
+            fluidPDFR[indices, 4] = ratioR * fluidPDFTotal[indices, 4]
+            fluidPDFR[indices, 7] = ratioR * fluidPDFTotal[indices, 7]
+            fluidPDFR[indices, 8] = ratioR * fluidPDFTotal[indices, 8]
+            
+            #for fluidB
+            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidRhoB[indices] = ratioB * tmpTotalRho
+            fluidPDFB[indices, 4] = ratioB * fluidPDFTotal[indices, 4]
+            fluidPDFB[indices, 7] = ratioB * fluidPDFTotal[indices, 7]
+            fluidPDFB[indices, 8] = ratioB * fluidPDFTotal[indices, 8]
+            
+            physicalVY[indices] = specificVY
+#            #for retreating fluid
+#            tmpUpper = neighboringNodes[tmpStart + 1]
+#            fluidPDFB[indices, 4] = fluidPDFB[tmpUpper, 2]
+#            tmpFor7 = neighboringNodes[tmpUpper * 8]
+#            tmpFor8 = neighboringNodes[tmpUpper * 8 + 2]
+#            if tmpFor7 >= 0:
+#                fluidPDFB[indices, 7] = fluidPDFB[tmpFor7, 5]
+#            if tmpFor8 >= 0:
+#                fluidPDFB[indices, 8] = fluidPDFB[tmpFor8, 6]
+
     cuda.syncthreads()
 
 """
@@ -1597,7 +2439,7 @@ def updateColorGradientOnWettingNew(totalFluidWettingNodes, xDim, cosTheta, sinT
 #        tmpN1Y = unitVectorNsy[indices] * cosTheta + unitVectorNsx[indices] * sinTheta
 #        tmpN2X = unitVectorNsx[indices] * cosTheta + unitVectorNsy[indices] * sinTheta
 #        tmpN2Y = unitVectorNsy[indices] * cosTheta - unitVectorNsx[indices] * sinTheta
-
+        
         #Unit vector of gradient on fluid node
         tmpLoc = fluidNodesWetting[indices]
         tmpGradientNorm = math.sqrt(gradientX[tmpLoc] * gradientX[tmpLoc] + \
@@ -1619,7 +2461,7 @@ def updateColorGradientOnWettingNew(totalFluidWettingNodes, xDim, cosTheta, sinT
             tmpCoeffGS2 = sinTheta / math.sin(thetaGS)
             tmpCoeffGS3 = -sinTheta * math.cos(thetaGS) / math.sin(thetaGS)
             tmpCoeffGS4 = -sinTheta / math.sin(thetaGS)
-
+            
         tmpNX1 = (cosTheta - tmpCoeffGS1) * unitVectorNsx[indices] + tmpCoeffGS2 * \
                 tmpUnitGradientX
         tmpNY1 = (cosTheta - tmpCoeffGS1) * unitVectorNsy[indices] + tmpCoeffGS2 * \
@@ -1648,7 +2490,7 @@ def updateColorGradientOnWettingNew(totalFluidWettingNodes, xDim, cosTheta, sinT
         #Update the color gradient on the fluid nodes near to solid
 
     cuda.syncthreads()
-
+    
 """
 Add the body force (including surface tension). Takashi 2018
 """
@@ -1708,17 +2550,69 @@ def calForceTermInColorGradientNew2D(totalNodes, xDim, surfaceTension, neighbori
         forceX[indices] = -0.5 * surfaceTension * KValue[indices] * gradientX[indices]
         forceY[indices] = -0.5 * surfaceTension * KValue[indices] * gradientY[indices]
     cuda.syncthreads()
+    
+"""
+Constant pressure boundary condition at the outlet of the domain
+"""
+@cuda.jit("void(int64, int64, int64, float64, int64[:], \
+                float64[:, :], float64[:], float64[:], float64[:], \
+                float64[:, :], float64[:, :])")
+def calConstPressureLowerGPUTotal(totalNodes, nx, xDim, constPL, fluidNodes, \
+                            fluidPDFTotal, physicalVY, fluidRhoR, \
+                            fluidRhoB, fluidPDFR, fluidPDFB):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by *xDim + bx * bDimX + tx
+    
+    if indices < totalNodes:
+#    if indices < 2 * nx and indices >= nx:
+        tmpIndex = fluidNodes[indices]
+        if tmpIndex >= nx and tmpIndex < 2 * nx:
+            #for fluid B
+            tmpV = 1. - 1./constPL * (fluidPDFTotal[indices, 0] + fluidPDFTotal[indices, 1] + \
+                    fluidPDFTotal[indices, 3] + 2. * (fluidPDFTotal[indices, 4] + \
+                    fluidPDFTotal[indices, 7] + fluidPDFTotal[indices, 8]))
+            fluidPDFTotal[indices, 2] = fluidPDFTotal[indices, 4] + 2./3. * (constPL * tmpV)
+            fluidPDFTotal[indices, 5] = fluidPDFTotal[indices, 7] + 0.5 * (fluidPDFTotal[indices, 3] - \
+                     fluidPDFTotal[indices, 1]) + 1./6. * constPL * tmpV
+            fluidPDFTotal[indices, 6] = fluidPDFTotal[indices, 8] + 0.5 * (fluidPDFTotal[indices, 1] - \
+                     fluidPDFTotal[indices, 3]) + 1./6. * constPL * tmpV
+            physicalVY[indices] = tmpV
+            #fluid R
+            ratioR = fluidRhoR[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidPDFR[indices, 2] = ratioR * fluidPDFTotal[indices, 2]
+            fluidPDFR[indices, 5] = ratioR * fluidPDFTotal[indices, 5]
+            fluidPDFR[indices, 6] = ratioR * fluidPDFTotal[indices, 6]
+            #fluid B
+            ratioB = fluidRhoB[indices] / (fluidRhoR[indices] + fluidRhoB[indices])
+            fluidPDFB[indices, 2] = ratioB * fluidPDFTotal[indices, 2]
+            fluidPDFB[indices, 5] = ratioB * fluidPDFTotal[indices, 5]
+            fluidPDFB[indices, 6] = ratioB * fluidPDFTotal[indices, 6]
+#        fluidRhoB[indices] = constPLB
+        #for fluid R
+#        tmpVR = 1. - 1./constPLR * (fluidPDFR[indices, 0] + fluidPDFR[indices, 1] + \
+#                fluidPDFR[indices, 3] + 2. * (fluidPDFR[indices, 4] + \
+#                fluidPDFR[indices, 7] + fluidPDFR[indices, 8]))
+#        fluidPDFR[indices, 2] = fluidPDFR[indices, 4] + 2./3. * constPLR * tmpVR
+#        fluidPDFR[indices, 5] = fluidPDFR[indices, 7] + 0.5 * (fluidPDFR[indices, 3] - \
+#                 fluidPDFR[indices, 1]) + 1./6. * constPLR * tmpVR
+#        fluidPDFR[indices, 6] = fluidPDFR[indices, 8] + 0.5 * (fluidPDFR[indices, 1] - \
+#                 fluidPDFR[indices, 3]) + 1./6. * constPLR * tmpVR
+#        fluidRhoR[indices] = constPLR
+    cuda.syncthreads()
 
 
-@cuda.jit('void(int64, int64, float64[:, :], float64[:, :], float64[:], float64[:])')
-def calMacroDensityRKGPU2DNew(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR, \
+"""
+Calculate the macro-density for 'red' and 'blue' fluids
+"""
+@cuda.jit('void(int64, int64, int64, int64, int64[:], float64[:, :], float64[:, :], \
+                float64[:], float64[:])')
+def calMacroDensityRKGPU2DNew(totalNodes, nx, ny, xDim, fluidNodes, fluidPDFR, fluidPDFB, fluidRhoR, \
                            fluidRhoB):
-    tx = cuda.threadIdx.x;
-    bx = cuda.blockIdx.x;
-    bDimX = cuda.blockDim.x
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
     by = cuda.blockIdx.y
     indices = by * xDim + bx * bDimX + tx
-
+     
     if (indices < totalNodes):
         tmpLoc = fluidNodes[indices]
         if tmpLoc < (ny - 2) * nx:
@@ -1726,8 +2620,36 @@ def calMacroDensityRKGPU2DNew(totalNodes, xDim, fluidPDFR, fluidPDFB, fluidRhoR,
             for i in range(9):
                 tmpRhoR += fluidPDFR[indices, i]
                 tmpRhoB += fluidPDFB[indices, i]
-            #            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
-            #            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
+    #            deviceCollisionR[indices, i] = fluidPDFR[indices, i]
+    #            deviceCollisionB[indices, i] = fluidPDFB[indices, i]
             fluidRhoR[indices] = tmpRhoR
             fluidRhoB[indices] = tmpRhoB
     cuda.syncthreads()
+    
+"""
+Calculate the macro-scale velocity
+"""
+@cuda.jit('void(int64, int64, float64[:, :], float64[:], float64[:], \
+                float64[:], float64[:], float64[:], float64[:])')
+def calPhysicalVelocityRKGPU2DNew1(totalNodes, xDim, fluidPDFTotal, fluidRhoR, \
+                               fluidRhoB, physicalVX, physicalVY, forceX, forceY):
+    tx = cuda.threadIdx.x; bx = cuda.blockIdx.x; bDimX = cuda.blockDim.x
+    by = cuda.blockIdx.y
+    indices = by * xDim + bx * bDimX + tx
+    
+    if (indices < totalNodes):
+        tmpVX = 0.; tmpVY = 0.
+        tmpRhoSum = fluidRhoB[indices] + fluidRhoR[indices]
+        tmpVX = fluidPDFTotal[indices, 1] - fluidPDFTotal[indices, 3] + \
+                fluidPDFTotal[indices, 5] - fluidPDFTotal[indices, 6] - \
+                fluidPDFTotal[indices, 7] + fluidPDFTotal[indices, 8] + 0.5 * \
+                forceX[indices]
+        physicalVX[indices] = tmpVX / tmpRhoSum
+        tmpVY = fluidPDFTotal[indices, 2] - fluidPDFTotal[indices, 4] + \
+                fluidPDFTotal[indices, 5] + fluidPDFTotal[indices, 6] - \
+                fluidPDFTotal[indices, 7] - fluidPDFTotal[indices, 8] + 0.5 * \
+                forceY[indices]
+        physicalVY[indices] = tmpVY / tmpRhoSum
+    cuda.syncthreads()
+
+        
